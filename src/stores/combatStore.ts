@@ -102,7 +102,8 @@ function parseBattlefieldText(text: string): { entities: Entity[]; terrain: Terr
       terrainItems.forEach((item, index) => {
         try {
           // Example: Wall at (5,3) - 1×1×5ft [blocks movement]
-          const posMatch = item.match(/at\s+\((\d+),(\d+)\)\s*-\s*(\d+)×(\d+)×(\d+)ft/);
+          // Updated regex to handle optional spaces in coords: (5, 3)
+          const posMatch = item.match(/at\s+\((\d+),\s*(\d+)\)\s*-\s*(\d+)\s*×\s*(\d+)\s*×\s*(\d+)ft/);
           const typeMatch = item.match(/^([^\s]+)/);
           
           if (posMatch && typeMatch) {
@@ -169,7 +170,8 @@ function parseBattlefieldText(text: string): { entities: Entity[]; terrain: Terr
       creatureLines.forEach((line, index) => {
         try {
           console.log('[parseBattlefieldText] Parsing line:', line);
-          const nameMatch = line.match(/^(.+?)\s+at\s+\((\d+),(\d+),(\d+)\)/);
+          // Updated regex to handle optional spaces in coords: (17, 4, 10)
+          const nameMatch = line.match(/^(.+?)\s+at\s+\((\d+),\s*(\d+),\s*(\d+)\)/);
           if (!nameMatch) {
             console.warn('[parseBattlefieldText] No name match for line:', line);
             return;

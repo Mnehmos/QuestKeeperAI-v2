@@ -25,3 +25,4 @@ To build the application for distribution:
 ```bash
 npm run tauri build
 ```
+# QuestKeeperAI-v2

@@ -184,7 +184,7 @@ export function formatQuestLog(data: any): string {
 
     let markdown = `## 📜 Quest Log\n\n`;
 
-    data.quests.forEach((quest: any, index: number) => {
+    data.quests.forEach((quest: any, _index: number) => {
         const statusIcon = quest.status === 'completed' ? '✅' : quest.status === 'failed' ? '❌' : '🔄';
         
         markdown += `### ${statusIcon} ${quest.title || 'Untitled Quest'}\n\n`;

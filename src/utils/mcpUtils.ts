@@ -154,7 +154,7 @@ export async function executeBatchToolCalls(
 ): Promise<BatchToolResult[]> {
   const startTime = Date.now();
   
-  const promises = calls.map(async (call, index) => {
+  const promises = calls.map(async (call, _index) => {
     const callStart = Date.now();
     try {
       const result = await mcpClient.callTool(call.name, call.args);
@@ -189,7 +189,7 @@ export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   
   return (...args: Parameters<T>) => {
     if (timeout) {

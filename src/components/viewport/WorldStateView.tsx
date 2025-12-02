@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGameStateStore } from '../../stores/gameStateStore';
+import { WorldEnvironmentForm } from './WorldEnvironmentForm';
 
 export const WorldStateView: React.FC = () => {
   const world = useGameStateStore((state) => state.world);
   const syncState = useGameStateStore((state) => state.syncState);
+  const [showEnvironmentForm, setShowEnvironmentForm] = useState(false);
   
   // Safety check - return loading state if world is undefined
   if (!world) {
@@ -71,6 +73,25 @@ export const WorldStateView: React.FC = () => {
           {world.lastUpdated && (
             <div className="text-xs text-terminal-green/50 mt-2">
               Last Updated: {new Date(world.lastUpdated).toLocaleString()}
+            </div>
+          )}
+        </div>
+
+        {/* Environment Form Toggle */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowEnvironmentForm(!showEnvironmentForm)}
+            className="w-full flex items-center justify-between px-4 py-2 bg-terminal-green/10 border border-terminal-green hover:bg-terminal-green/20 transition-colors"
+          >
+            <span className="text-sm font-bold uppercase tracking-wider text-terminal-green-bright flex items-center gap-2">
+              <span>🌤️</span>
+              Set Environment
+            </span>
+            <span className="text-terminal-green">{showEnvironmentForm ? '▲' : '▼'}</span>
+          </button>
+          {showEnvironmentForm && (
+            <div className="mt-2">
+              <WorldEnvironmentForm onClose={() => setShowEnvironmentForm(false)} />
             </div>
           )}
         </div>

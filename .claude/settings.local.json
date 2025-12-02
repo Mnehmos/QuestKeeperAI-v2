@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(powershell -Command \"Copy-Item ''C:\\Users\\mnehm\\AppData\\Roaming\\Roo-Code\\MCP\\rpg-mcp\\bin\\rpg-mcp-win.exe'' ''C:\\Users\\mnehm\\Desktop\\Quest Keeper AI attempt 2\\src-tauri\\binaries\\rpg-mcp-server-x86_64-pc-windows-msvc.exe'' -Force\")",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run tauri:*)"
     ],
     "deny": [],
     "ask": []

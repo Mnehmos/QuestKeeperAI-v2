@@ -77,11 +77,26 @@ export interface Quest {
   prerequisites?: string[];
 }
 
+export interface CharacterCondition {
+  name: string;
+  duration?: number; // rounds remaining, -1 for permanent
+  source?: string;
+}
+
+export interface CharacterCurrencies {
+  gold: number;
+  silver: number;
+  copper: number;
+  platinum?: number;
+  electrum?: number;
+}
+
 export interface CharacterStats {
   id?: string;
   name: string;
   level: number;
   class: string;
+  race?: string;
   hp: { current: number; max: number };
   xp: { current: number; max: number };
   stats: {
@@ -97,6 +112,11 @@ export interface CharacterStats {
     weapons: string[];
     other: string[];
   };
+  conditions?: CharacterCondition[];
+  currencies?: CharacterCurrencies;
+  savingThrowProficiencies?: ('str' | 'dex' | 'con' | 'int' | 'wis' | 'cha')[];
+  speed?: number;
+  armorClass?: number; // Calculated or overridden AC
 }
 
 interface GameState {
@@ -111,6 +131,8 @@ interface GameState {
   party: CharacterStats[];
   isSyncing: boolean;
   lastSyncTime: number;
+  // Selection lock prevents syncState from overriding user's explicit selection
+  selectionLocked: boolean;
 
   setInventory: (items: InventoryItem[]) => void;
   setWorldState: (state: WorldState) => void;
@@ -120,8 +142,10 @@ interface GameState {
   updateNote: (id: string, content: string) => void;
   deleteNote: (id: string) => void;
   setActiveCharacter: (char: CharacterStats | null) => void;
-  setActiveCharacterId: (id: string | null) => void;
-  setActiveWorldId: (id: string | null) => void;
+  // lock param: if true, prevents syncState from overriding this selection
+  setActiveCharacterId: (id: string | null, lock?: boolean) => void;
+  setActiveWorldId: (id: string | null, lock?: boolean) => void;
+  unlockSelection: () => void;
   syncState: (force?: boolean) => Promise<void>;
 }
 
@@ -135,11 +159,41 @@ function parseCharacterFromJson(char: any): CharacterStats | null {
     const level = char.level || 1;
     const xpForNextLevel = level * 1000;
 
+    // Parse conditions if present
+    const conditions: CharacterCondition[] = [];
+    if (Array.isArray(char.conditions)) {
+      char.conditions.forEach((c: any) => {
+        if (typeof c === 'string') {
+          conditions.push({ name: c });
+        } else if (c && c.name) {
+          conditions.push({
+            name: c.name,
+            duration: c.duration,
+            source: c.source
+          });
+        }
+      });
+    }
+
+    // Parse currencies if present
+    const currencies: CharacterCurrencies = {
+      gold: char.currencies?.gold ?? char.gold ?? 0,
+      silver: char.currencies?.silver ?? char.silver ?? 0,
+      copper: char.currencies?.copper ?? char.copper ?? 0,
+      platinum: char.currencies?.platinum ?? char.platinum,
+      electrum: char.currencies?.electrum ?? char.electrum
+    };
+
+    // Parse saving throw proficiencies based on class
+    const savingThrowProficiencies = char.savingThrowProficiencies ||
+      getDefaultSavingThrowProficiencies(char.class || 'Adventurer');
+
     return {
       id: char.id,
       name: char.name,
       level: level,
       class: char.class || 'Adventurer',
+      race: char.race,
       hp: {
         current: char.hp || 0,
         max: char.maxHp || char.hp || 0
@@ -160,12 +214,45 @@ function parseCharacterFromJson(char: any): CharacterStats | null {
         armor: 'None',
         weapons: [],
         other: []
-      }
+      },
+      conditions: conditions.length > 0 ? conditions : undefined,
+      currencies,
+      savingThrowProficiencies,
+      speed: char.speed ?? 30,
+      armorClass: char.armorClass ?? char.ac
     };
   } catch (error) {
     console.error('[parseCharacterFromJson] Failed to parse character:', error);
     return null;
   }
+}
+
+/**
+ * Get default saving throw proficiencies based on D&D 5e class
+ */
+function getDefaultSavingThrowProficiencies(charClass: string): ('str' | 'dex' | 'con' | 'int' | 'wis' | 'cha')[] {
+  const classLower = charClass.toLowerCase();
+
+  const classProfs: Record<string, ('str' | 'dex' | 'con' | 'int' | 'wis' | 'cha')[]> = {
+    'barbarian': ['str', 'con'],
+    'bard': ['dex', 'cha'],
+    'cleric': ['wis', 'cha'],
+    'druid': ['int', 'wis'],
+    'fighter': ['str', 'con'],
+    'monk': ['str', 'dex'],
+    'paladin': ['wis', 'cha'],
+    'ranger': ['str', 'dex'],
+    'rogue': ['dex', 'int'],
+    'sorcerer': ['con', 'cha'],
+    'warlock': ['wis', 'cha'],
+    'wizard': ['int', 'wis'],
+    // Middle-earth themed classes
+    'hobbit': ['dex', 'cha'],
+    'ring-bearer': ['wis', 'cha'],
+    'ringbearer': ['wis', 'cha'],
+  };
+
+  return classProfs[classLower] || ['con', 'wis']; // Default fallback
 }
 
 /**
@@ -363,17 +450,23 @@ export const useGameStateStore = create<GameState>((set, get) => ({
   party: [],
   isSyncing: false,
   lastSyncTime: 0,
+  selectionLocked: false,
 
   setInventory: (items) => set({ inventory: items }),
   setWorldState: (state) => set({ world: state }),
   setNotes: (notes) => set({ notes }),
   setQuests: (quests) => set({ quests }),
   setActiveCharacter: (char) => set({ activeCharacter: char }),
-  setActiveCharacterId: (id) => set((state) => ({
+  setActiveCharacterId: (id, lock = true) => set((state) => ({
     activeCharacterId: id,
-    activeCharacter: state.party.find((c) => c.id === id) || state.activeCharacter
+    activeCharacter: state.party.find((c) => c.id === id) || state.activeCharacter,
+    selectionLocked: lock ? true : state.selectionLocked
   })),
-  setActiveWorldId: (id) => set({ activeWorldId: id }),
+  setActiveWorldId: (id, lock = true) => set((state) => ({
+    activeWorldId: id,
+    selectionLocked: lock ? true : state.selectionLocked
+  })),
+  unlockSelection: () => set({ selectionLocked: false }),
 
   addNote: (note) => set((state) => ({
     notes: [note, ...state.notes]
@@ -388,20 +481,21 @@ export const useGameStateStore = create<GameState>((set, get) => ({
   })),
 
   syncState: async (force = false) => {
-    const { isSyncing, lastSyncTime, activeCharacterId: storedActiveCharId, activeWorldId: storedWorldId } = get();
-    
+    const { isSyncing, lastSyncTime, activeCharacterId: storedActiveCharId, activeWorldId: storedWorldId, selectionLocked } = get();
+
     // Prevent concurrent syncs and rate limit to max once per 2 seconds unless forced
     if (isSyncing) {
       console.log('[GameStateStore] Sync already in progress, skipping');
       return;
     }
-    
+
     const now = Date.now();
     if (!force && now - lastSyncTime < 2000) {
       console.log('[GameStateStore] Rate limited, skipping sync');
       return;
     }
 
+    console.log('[GameStateStore] Starting sync, selectionLocked:', selectionLocked);
     set({ isSyncing: true, lastSyncTime: now });
 
     try {
@@ -448,14 +542,27 @@ export const useGameStateStore = create<GameState>((set, get) => ({
             // Use existing active character if still valid, otherwise use first
             const currentActiveId = activeCharId;
             const stillExists = currentActiveId && allCharacters.find(c => c.id === currentActiveId);
-            const chosen = stillExists ? allCharacters.find(c => c.id === currentActiveId)! : allCharacters[0];
-            
-            set({
-              activeCharacter: chosen,
-              activeCharacterId: chosen.id || null,
-              party: allCharacters
-            });
-            activeCharId = chosen.id || null;
+
+            // Respect selection lock - don't change selection if locked
+            if (selectionLocked && stillExists) {
+              // Keep current selection, just update the party list and character data
+              const updatedChar = allCharacters.find(c => c.id === currentActiveId)!;
+              set({
+                activeCharacter: updatedChar,
+                party: allCharacters
+              });
+              console.log('[GameStateStore] Selection locked, keeping character:', currentActiveId);
+            } else {
+              // No lock or current selection invalid - pick character
+              const chosen = stillExists ? allCharacters.find(c => c.id === currentActiveId)! : allCharacters[0];
+              set({
+                activeCharacter: chosen,
+                activeCharacterId: chosen.id || null,
+                party: allCharacters
+              });
+              activeCharId = chosen.id || null;
+              console.log('[GameStateStore] Set active character:', chosen.name, chosen.id);
+            }
           } else {
             set({ party: [], activeCharacter: null, activeCharacterId: null });
             activeCharId = null;
@@ -563,9 +670,18 @@ export const useGameStateStore = create<GameState>((set, get) => ({
 
         if (worlds.length > 0) {
           const existingWorld = activeWorldId && worlds.find((w: any) => w.id === activeWorldId);
-          const chosenWorld = existingWorld || worlds[0];
-          activeWorldId = chosenWorld.id || null;
-          set({ activeWorldId });
+
+          // Respect selection lock - don't change world selection if locked
+          let chosenWorld;
+          if (selectionLocked && existingWorld) {
+            chosenWorld = existingWorld;
+            console.log('[GameStateStore] Selection locked, keeping world:', activeWorldId);
+          } else {
+            chosenWorld = existingWorld || worlds[0];
+            activeWorldId = chosenWorld.id || null;
+            set({ activeWorldId });
+            console.log('[GameStateStore] Set active world:', chosenWorld.name, chosenWorld.id);
+          }
 
           // Fetch detailed world info
           let worldDetails: any = null;
@@ -594,6 +710,8 @@ export const useGameStateStore = create<GameState>((set, get) => ({
       }
 
       console.log('[GameStateStore] Sync complete');
+      // Unlock selection after successful sync so next sync can auto-select if needed
+      set({ selectionLocked: false });
 
     } catch (error) {
       console.error('[GameStateStore] Error syncing game state:', error);

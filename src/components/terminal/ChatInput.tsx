@@ -148,6 +148,11 @@ async function handleSlashCommand(command: string, args: string): Promise<Comman
 |---------|-------------|
 | \`/tab <n>\` | Switch tab (adventure, combat, character, map, journal, settings) |
 
+### 🔒 Secret Keeper
+| Command | Description |
+|---------|-------------|
+| \`/secrets\` | Show player-hidden secrets for current world/quest |
+
 ---
 *Type naturally to interact with the AI, or use commands for quick actions.*`
       };
@@ -158,7 +163,7 @@ async function handleSlashCommand(command: string, args: string): Promise<Comman
       const party = gameState.party;
       const inventory = gameState.inventory;
       const encounterId = combatState.activeEncounterId;
-      const combatants = combatState.combatants;
+      const combatants = combatState.entities;
 
       let status = `## Game Status\n\n`;
 
@@ -222,14 +227,14 @@ async function handleSlashCommand(command: string, args: string): Promise<Comman
       debug += `- Party: ${gameState.party.length}\n`;
       debug += `- Inventory: ${gameState.inventory.length}\n`;
       debug += `- Notes: ${gameState.notes.length}\n`;
-      debug += `- Combatants: ${combatState.combatants.length}\n`;
+      debug += `- Combatants: ${combatState.entities.length}\n`;
       debug += `- Terrain: ${combatState.terrain.length}\n`;
 
       return { content: debug };
     }
 
     case 'clear': {
-      useChatStore.getState().clearMessages();
+      useChatStore.getState().clearHistory();
       return { content: `✓ Chat cleared`, type: 'success' };
     }
 
@@ -447,16 +452,26 @@ async function handleSlashCommand(command: string, args: string): Promise<Comman
     }
 
     case 'initiative': {
-      const combatants = combatState.combatants;
+      const combatants = combatState.entities;
       if (combatants.length === 0) {
         return { content: `*No combatants*` };
       }
 
       let output = `## Initiative Order\n\n`;
-      const sorted = [...combatants].sort((a, b) => (b.initiative || 0) - (a.initiative || 0));
-      for (let i = 0; i < sorted.length; i++) {
-        const c = sorted[i];
-        output += `${i + 1}. **${c.name}** (${c.initiative || 0}) - ${c.currentHp || 0}/${c.maxHp || 0} HP\n`;
+      // Use turnOrder from combatState if available, otherwise just list entities
+      const turnOrder = combatState.turnOrder || [];
+      if (turnOrder.length > 0) {
+        for (let i = 0; i < turnOrder.length; i++) {
+          const name = turnOrder[i];
+          const entity = combatants.find(c => c.name === name);
+          const hp = entity?.metadata?.hp;
+          output += `${i + 1}. **${name}** - ${hp?.current || 0}/${hp?.max || 0} HP\n`;
+        }
+      } else {
+        for (let i = 0; i < combatants.length; i++) {
+          const c = combatants[i];
+          output += `${i + 1}. **${c.name}** - ${c.metadata?.hp?.current || 0}/${c.metadata?.hp?.max || 0} HP\n`;
+        }
       }
       return { content: output };
     }
@@ -599,6 +614,59 @@ async function handleSlashCommand(command: string, args: string): Promise<Comman
         return { content: output };
       } catch (error: any) {
         return { content: `Dice roll error: ${error.message}`, type: 'error' };
+      }
+    }
+
+    // === SECRET KEEPER COMMANDS ===
+    case 'secrets': {
+      try {
+        const worldId = gameState.activeWorldId;
+        if (!worldId) {
+          return { content: `No active world. Select a world first.`, type: 'error' };
+        }
+
+        const result = await mcpManager.gameStateClient.callTool('get_secrets', { worldId });
+        const text = result?.content?.[0]?.text || '{}';
+
+        let secrets;
+        try {
+          secrets = JSON.parse(text);
+        } catch {
+          return { content: text };
+        }
+
+        if (!secrets || (Array.isArray(secrets) && secrets.length === 0) || Object.keys(secrets).length === 0) {
+          return { content: `*No secrets stored for this world*\n\nSecrets are automatically created during world/quest generation.` };
+        }
+
+        let output = `## 🔒 Secret Keeper - Hidden Information\n\n`;
+        output += `**World:** ${gameState.worlds?.find((w: any) => w.id === worldId)?.name || worldId}\n\n`;
+        output += `> **WARNING:** This information is hidden from players!\n\n`;
+
+        // Format secrets based on structure
+        if (Array.isArray(secrets)) {
+          for (const secret of secrets) {
+            output += `### ${secret.type || 'Secret'}\n`;
+            output += `**ID:** \`${secret.id}\`\n`;
+            if (secret.description) output += `${secret.description}\n`;
+            if (secret.revealCondition) output += `*Reveal when:* ${secret.revealCondition}\n`;
+            output += '\n';
+          }
+        } else {
+          // Object format
+          for (const [key, value] of Object.entries(secrets)) {
+            output += `### ${key}\n`;
+            if (typeof value === 'object') {
+              output += '```json\n' + JSON.stringify(value, null, 2) + '\n```\n\n';
+            } else {
+              output += `${value}\n\n`;
+            }
+          }
+        }
+
+        return { content: output };
+      } catch (error: any) {
+        return { content: `Error getting secrets: ${error.message}`, type: 'error' };
       }
     }
 
@@ -756,6 +824,55 @@ export const ChatInput: React.FC = () => {
         ].join('\n');
 
         history.unshift({ role: 'system', content: selectionContext });
+
+        // Inject world environment context for immersive scene descriptions
+        const worldEnv = activeWorld?.environment || gameState.world?.environment || {};
+        if (worldEnv && Object.keys(worldEnv).length > 0) {
+          const envContext = [
+            '--- CURRENT ENVIRONMENT ---',
+            worldEnv.date ? `Date: ${typeof worldEnv.date === 'object' ? worldEnv.date.full_date : worldEnv.date}` : null,
+            worldEnv.time_of_day || worldEnv.timeOfDay ? `Time of Day: ${worldEnv.time_of_day || worldEnv.timeOfDay}` : null,
+            worldEnv.season ? `Season: ${typeof worldEnv.season === 'object' ? worldEnv.season.current : worldEnv.season}` : null,
+            worldEnv.weather || worldEnv.weatherConditions ? `Weather: ${typeof worldEnv.weather === 'object' ? worldEnv.weather.condition : (worldEnv.weather || worldEnv.weatherConditions)}` : null,
+            worldEnv.temperature ? `Temperature: ${typeof worldEnv.temperature === 'object' ? worldEnv.temperature.current : worldEnv.temperature}` : null,
+            worldEnv.lighting ? `Lighting: ${typeof worldEnv.lighting === 'object' ? worldEnv.lighting.overall : worldEnv.lighting}` : null,
+            worldEnv.moon_phase || worldEnv.moonPhase ? `Moon Phase: ${typeof (worldEnv.moon_phase || worldEnv.moonPhase) === 'object' ? (worldEnv.moon_phase || worldEnv.moonPhase).phase : (worldEnv.moon_phase || worldEnv.moonPhase)}` : null,
+            'Use this environment data when describing scenes or when the player asks about weather/time/conditions.'
+          ].filter(Boolean).join('\n');
+
+          history.unshift({ role: 'system', content: envContext });
+        }
+
+        // Inject secrets context for the Secret Keeper system (GM-only knowledge)
+        if (activeWorldId) {
+          try {
+            const secretsResult = await mcpManager.gameStateClient.callTool('get_secrets', { worldId: activeWorldId });
+            const secretsText = secretsResult?.content?.[0]?.text || '{}';
+            let secrets;
+            try {
+              secrets = JSON.parse(secretsText);
+            } catch {
+              secrets = null;
+            }
+
+            if (secrets && Object.keys(secrets).length > 0) {
+              const secretsContext = [
+                '--- SECRET KEEPER: GM-ONLY KNOWLEDGE ---',
+                'The following secrets are HIDDEN from the player. Use them to guide the narrative but NEVER reveal them directly.',
+                'Only hint at secrets when dramatically appropriate. Use spoiler tags for any reveals.',
+                '',
+                JSON.stringify(secrets, null, 2),
+                '',
+                'Remember: These secrets enhance the story. Drop hints, create tension, but protect the mystery.',
+                '--- END SECRETS ---'
+              ].join('\n');
+
+              history.unshift({ role: 'system', content: secretsContext });
+            }
+          } catch (secretsErr) {
+            console.warn('[ChatInput] Failed to fetch secrets for context:', secretsErr);
+          }
+        }
       } catch (err) {
         console.warn('[ChatInput] Failed to inject selection context into system prompt:', err);
       }

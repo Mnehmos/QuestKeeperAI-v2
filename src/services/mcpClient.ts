@@ -38,9 +38,9 @@ const COMPLEX_OPERATIONS = new Set([
 
 export class McpClient {
     private process: Child | null = null;
-    private pendingRequests: Map<string | number, { 
+    private pendingRequests: Map<string | number, {
         resolve: (response: JsonRpcResponse) => void;
-        timeout: NodeJS.Timeout;
+        timeout: ReturnType<typeof setTimeout>;
         startTime: number;
     }> = new Map();
     private serverName: string;

@@ -84,7 +84,7 @@ class LLMService {
             const response = await mcpManager.gameStateClient.listTools();
             this.toolCache = response.tools || [];
             this.toolCacheTime = now;
-            return this.toolCache;
+            return this.toolCache || [];
         } catch (e) {
             console.warn('[LLMService] Failed to fetch tools:', e);
             return this.toolCache || [];
@@ -223,13 +223,16 @@ class LLMService {
 
             // Process results and parse important data
             for (const toolCall of response.toolCalls) {
-                const result = results.get(toolCall.id);
-                await this.parseToolResult(toolCall.name, result);
-                
+                const toolCallId = toolCall.id || '';
+                const result = results.get(toolCallId);
+                if (toolCall.name) {
+                    await this.parseToolResult(toolCall.name, result);
+                }
+
                 currentHistory.push({
                     role: 'tool',
                     content: JSON.stringify(result),
-                    toolCallId: toolCall.id
+                    toolCallId
                 } as any);
             }
 

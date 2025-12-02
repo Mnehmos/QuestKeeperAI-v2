@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type MessageSender = 'user' | 'ai' | 'system';
-export type MessageType = 'text' | 'error' | 'info';
+export type MessageType = 'text' | 'error' | 'info' | 'success';
 
 export interface Message {
   id: string;

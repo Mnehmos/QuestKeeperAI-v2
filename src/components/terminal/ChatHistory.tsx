@@ -1,12 +1,73 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { useChatStore } from '../../stores/chatStore';
 import { ToolCallDisplay } from '../chat/ToolCallDisplay';
+import { SpoilerRenderer } from '../chat/Spoiler';
 import 'highlight.js/styles/atom-one-dark.css';
 
 const EMPTY_MESSAGES: any[] = [];
+
+// Markdown component configuration - shared across renders
+const markdownComponents = {
+  code({ node, inline, className, children, ...props }: any) {
+    return inline ? (
+      <code
+        className="bg-terminal-black/50 px-1 rounded text-terminal-amber"
+        {...props}
+      >
+        {children}
+      </code>
+    ) : (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    );
+  },
+  h1: ({ children }: any) => (
+    <h1 className="text-xl font-bold text-terminal-green mb-2 border-b border-terminal-green-dim pb-1">
+      {children}
+    </h1>
+  ),
+  h2: ({ children }: any) => (
+    <h2 className="text-lg font-bold text-terminal-green mb-2">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }: any) => (
+    <h3 className="text-md font-bold text-terminal-green mb-1">
+      {children}
+    </h3>
+  ),
+  ul: ({ children }: any) => (
+    <ul className="list-disc list-inside space-y-1 ml-2">
+      {children}
+    </ul>
+  ),
+  ol: ({ children }: any) => (
+    <ol className="list-decimal list-inside space-y-1 ml-2">
+      {children}
+    </ol>
+  ),
+  li: ({ children }: any) => (
+    <li className="text-terminal-green">{children}</li>
+  ),
+  p: ({ children }: any) => <p className="mb-2">{children}</p>,
+  blockquote: ({ children }: any) => (
+    <blockquote className="border-l-2 border-terminal-amber pl-4 italic opacity-80">
+      {children}
+    </blockquote>
+  ),
+  strong: ({ children }: any) => (
+    <strong className="font-bold text-terminal-amber">
+      {children}
+    </strong>
+  ),
+  em: ({ children }: any) => (
+    <em className="italic text-terminal-cyan">{children}</em>
+  ),
+};
 
 export const ChatHistory: React.FC = () => {
   const messages = useChatStore((state) => {
@@ -31,6 +92,17 @@ export const ChatHistory: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Memoized markdown renderer function for the SpoilerRenderer
+  const renderMarkdown = useCallback((text: string) => (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+      components={markdownComponents}
+    >
+      {text}
+    </ReactMarkdown>
+  ), []);
 
   return (
     <div className="flex flex-col h-full">
@@ -125,70 +197,10 @@ export const ChatHistory: React.FC = () => {
               >
                 {msg.sender === 'ai' ? (
                   <div className="markdown-content prose prose-invert prose-sm max-w-none">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeHighlight]}
-                      components={{
-                        code({ node, inline, className, children, ...props }: any) {
-                          return inline ? (
-                            <code
-                              className="bg-terminal-black/50 px-1 rounded text-terminal-amber"
-                              {...props}
-                            >
-                              {children}
-                            </code>
-                          ) : (
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          );
-                        },
-                        h1: ({ children }: any) => (
-                          <h1 className="text-xl font-bold text-terminal-green mb-2 border-b border-terminal-green-dim pb-1">
-                            {children}
-                          </h1>
-                        ),
-                        h2: ({ children }: any) => (
-                          <h2 className="text-lg font-bold text-terminal-green mb-2">
-                            {children}
-                          </h2>
-                        ),
-                        h3: ({ children }: any) => (
-                          <h3 className="text-md font-bold text-terminal-green mb-1">
-                            {children}
-                          </h3>
-                        ),
-                        ul: ({ children }: any) => (
-                          <ul className="list-disc list-inside space-y-1 ml-2">
-                            {children}
-                          </ul>
-                        ),
-                        ol: ({ children }: any) => (
-                          <ol className="list-decimal list-inside space-y-1 ml-2">
-                            {children}
-                          </ol>
-                        ),
-                        li: ({ children }: any) => (
-                          <li className="text-terminal-green">{children}</li>
-                        ),
-                        p: ({ children }: any) => <p className="mb-2">{children}</p>,
-                        blockquote: ({ children }: any) => (
-                          <blockquote className="border-l-2 border-terminal-amber pl-4 italic opacity-80">
-                            {children}
-                          </blockquote>
-                        ),
-                        strong: ({ children }: any) => (
-                          <strong className="font-bold text-terminal-amber">
-                            {children}
-                          </strong>
-                        ),
-                        em: ({ children }: any) => (
-                          <em className="italic text-terminal-cyan">{children}</em>
-                        ),
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
+                    <SpoilerRenderer
+                      content={msg.content}
+                      renderMarkdown={renderMarkdown}
+                    />
                   </div>
                 ) : (
                   <div className="whitespace-pre-wrap">{msg.content}</div>

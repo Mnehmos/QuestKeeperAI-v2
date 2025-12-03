@@ -43,6 +43,7 @@ export interface WorldState {
   lastUpdated?: string;
 }
 
+// DEPRECATED: Use Note from notesStore instead
 export interface Note {
   id: string;
   title: string;
@@ -124,6 +125,7 @@ interface GameState {
   inventory: InventoryItem[];
   worlds: any[];
   world: WorldState;
+  // DEPRECATED: notes now live in notesStore for proper persistence
   notes: Note[];
   quests: Quest[];
   activeCharacter: CharacterStats | null;
@@ -137,10 +139,14 @@ interface GameState {
 
   setInventory: (items: InventoryItem[]) => void;
   setWorldState: (state: WorldState) => void;
+  // DEPRECATED: Use notesStore instead
   setNotes: (notes: Note[]) => void;
   setQuests: (quests: Quest[]) => void;
+  // DEPRECATED: Use notesStore instead
   addNote: (note: Note) => void;
+  // DEPRECATED: Use notesStore instead
   updateNote: (id: string, content: string) => void;
+  // DEPRECATED: Use notesStore instead
   deleteNote: (id: string) => void;
   setActiveCharacter: (char: CharacterStats | null) => void;
   // lock param: if true, prevents syncState from overriding this selection
@@ -398,39 +404,6 @@ function parseWorldFromResponse(worldData: any): WorldState {
   };
 }
 
-/**
- * Convert quests to notes for backward compatibility with Notes UI
- */
-function questsToNotes(quests: Quest[]): Note[] {
-  return quests.map(quest => {
-    // Build content with objectives
-    let content = quest.description;
-    
-    if (quest.objectives.length > 0) {
-      content += '\n\n**Objectives:**\n';
-      quest.objectives.forEach(obj => {
-        const checkbox = obj.completed ? '✓' : '○';
-        content += `${checkbox} ${obj.description} (${obj.progress || `${obj.current}/${obj.required}`})\n`;
-      });
-    }
-    
-    if (quest.rewards && (quest.rewards.experience || quest.rewards.gold || (quest.rewards.items && quest.rewards.items.length > 0))) {
-      content += '\n**Rewards:**\n';
-      if (quest.rewards.experience) content += `• ${quest.rewards.experience} XP\n`;
-      if (quest.rewards.gold) content += `• ${quest.rewards.gold} gold\n`;
-      if (quest.rewards.items?.length) content += `• Items: ${quest.rewards.items.join(', ')}\n`;
-    }
-
-    return {
-      id: `quest-${quest.id}`,
-      title: `${quest.status === 'completed' ? '✅' : quest.status === 'failed' ? '❌' : '📜'} ${quest.title}`,
-      content,
-      author: 'ai' as const,
-      timestamp: Date.now()
-    };
-  });
-}
-
 export const useGameStateStore = create<GameState>()(
   persist(
     (set, get) => ({
@@ -445,7 +418,7 @@ export const useGameStateStore = create<GameState>()(
         npcs: {},
         events: {}
       },
-      notes: [],
+      notes: [], // DEPRECATED: Use notesStore
       quests: [],
       activeCharacter: null,
       activeCharacterId: null,
@@ -457,7 +430,7 @@ export const useGameStateStore = create<GameState>()(
 
       setInventory: (items) => set({ inventory: items }),
       setWorldState: (state) => set({ world: state }),
-      setNotes: (notes) => set({ notes }),
+      setNotes: (notes) => set({ notes }), // DEPRECATED
       setQuests: (quests) => set({ quests }),
       setActiveCharacter: (char) => set({ activeCharacter: char }),
       setActiveCharacterId: (id, lock = true) => set((state) => ({
@@ -471,17 +444,25 @@ export const useGameStateStore = create<GameState>()(
       })),
       unlockSelection: () => set({ selectionLocked: false }),
 
-      addNote: (note) => set((state) => ({
-        notes: [note, ...state.notes]
-      })),
+      // DEPRECATED: Use notesStore.addNote instead
+      addNote: (note) => {
+        console.warn('[GameStateStore] addNote is DEPRECATED - use notesStore instead');
+        set((state) => ({ notes: [note, ...state.notes] }));
+      },
 
-      updateNote: (id, content) => set((state) => ({
-        notes: state.notes.map(n => n.id === id ? { ...n, content, timestamp: Date.now() } : n)
-      })),
+      // DEPRECATED: Use notesStore.updateNote instead
+      updateNote: (id, content) => {
+        console.warn('[GameStateStore] updateNote is DEPRECATED - use notesStore instead');
+        set((state) => ({
+          notes: state.notes.map(n => n.id === id ? { ...n, content, timestamp: Date.now() } : n)
+        }));
+      },
 
-      deleteNote: (id) => set((state) => ({
-        notes: state.notes.filter(n => n.id !== id)
-      })),
+      // DEPRECATED: Use notesStore.deleteNote instead
+      deleteNote: (id) => {
+        console.warn('[GameStateStore] deleteNote is DEPRECATED - use notesStore instead');
+        set((state) => ({ notes: state.notes.filter(n => n.id !== id) }));
+      },
 
       syncState: async (force = false) => {
         const { isSyncing, lastSyncTime, activeCharacterId: storedActiveCharId, activeWorldId: storedWorldId, selectionLocked } = get();
@@ -647,7 +628,7 @@ export const useGameStateStore = create<GameState>()(
               console.warn('[GameStateStore] Inventory fetch error:', inventoryResult.error);
             }
 
-            // Process quest result
+            // Process quest result - NOTE: Player notes now live in notesStore
             const questResult = batchResults.find(r => r.name === 'get_quest_log');
             if (questResult && !questResult.error) {
               const questData = parseMcpResponse<any>(questResult.result, null);
@@ -656,20 +637,16 @@ export const useGameStateStore = create<GameState>()(
                 const quests = parseQuestsFromResponse(questData);
                 console.log('[GameStateStore] Parsed', quests.length, 'quests');
                 
-                // Convert quests to notes for UI display
-                const questNotes = questsToNotes(quests);
-                
-                set({ 
-                  quests,
-                  notes: questNotes
-                });
+                // Only update quests - notes are now managed by notesStore
+                set({ quests });
               }
             } else if (questResult?.error) {
               console.warn('[GameStateStore] Quest fetch error:', questResult.error);
             }
           } else {
             console.log('[GameStateStore] No active character ID, skipping inventory/quest sync');
-            set({ inventory: [], quests: [], notes: [] });
+            // Only clear inventory and quests - notes are managed by notesStore
+            set({ inventory: [], quests: [] });
           }
 
           // ============================================

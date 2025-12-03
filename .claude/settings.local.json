@@ -14,7 +14,8 @@
       "Bash(npx prebuild-install:*)",
       "Bash(nvm version:*)",
       "Bash(del \"\\?\\C:\\Users\\Vario\\OneDrive\\Desktop\\QuestKeeperAI-v2\\nul\")",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

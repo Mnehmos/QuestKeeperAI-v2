@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { dnd5eItems } from '../data/dnd5eItems';
 import { parseMcpResponse, executeBatchToolCalls, debounce } from '../utils/mcpUtils';
 
@@ -430,296 +431,322 @@ function questsToNotes(quests: Quest[]): Note[] {
   });
 }
 
-export const useGameStateStore = create<GameState>((set, get) => ({
-  inventory: [],
-  worlds: [],
-  world: {
-    time: 'Unknown',
-    location: 'Unknown',
-    weather: 'Unknown',
-    date: 'Unknown',
-    environment: {},
-    npcs: {},
-    events: {}
-  },
-  notes: [],
-  quests: [],
-  activeCharacter: null,
-  activeCharacterId: null,
-  activeWorldId: null,
-  party: [],
-  isSyncing: false,
-  lastSyncTime: 0,
-  selectionLocked: false,
+export const useGameStateStore = create<GameState>()(
+  persist(
+    (set, get) => ({
+      inventory: [],
+      worlds: [],
+      world: {
+        time: 'Unknown',
+        location: 'Unknown',
+        weather: 'Unknown',
+        date: 'Unknown',
+        environment: {},
+        npcs: {},
+        events: {}
+      },
+      notes: [],
+      quests: [],
+      activeCharacter: null,
+      activeCharacterId: null,
+      activeWorldId: null,
+      party: [],
+      isSyncing: false,
+      lastSyncTime: 0,
+      selectionLocked: false,
 
-  setInventory: (items) => set({ inventory: items }),
-  setWorldState: (state) => set({ world: state }),
-  setNotes: (notes) => set({ notes }),
-  setQuests: (quests) => set({ quests }),
-  setActiveCharacter: (char) => set({ activeCharacter: char }),
-  setActiveCharacterId: (id, lock = true) => set((state) => ({
-    activeCharacterId: id,
-    activeCharacter: state.party.find((c) => c.id === id) || state.activeCharacter,
-    selectionLocked: lock ? true : state.selectionLocked
-  })),
-  setActiveWorldId: (id, lock = true) => set((state) => ({
-    activeWorldId: id,
-    selectionLocked: lock ? true : state.selectionLocked
-  })),
-  unlockSelection: () => set({ selectionLocked: false }),
+      setInventory: (items) => set({ inventory: items }),
+      setWorldState: (state) => set({ world: state }),
+      setNotes: (notes) => set({ notes }),
+      setQuests: (quests) => set({ quests }),
+      setActiveCharacter: (char) => set({ activeCharacter: char }),
+      setActiveCharacterId: (id, lock = true) => set((state) => ({
+        activeCharacterId: id,
+        activeCharacter: state.party.find((c) => c.id === id) || state.activeCharacter,
+        selectionLocked: lock ? true : state.selectionLocked
+      })),
+      setActiveWorldId: (id, lock = true) => set((state) => ({
+        activeWorldId: id,
+        selectionLocked: lock ? true : state.selectionLocked
+      })),
+      unlockSelection: () => set({ selectionLocked: false }),
 
-  addNote: (note) => set((state) => ({
-    notes: [note, ...state.notes]
-  })),
+      addNote: (note) => set((state) => ({
+        notes: [note, ...state.notes]
+      })),
 
-  updateNote: (id, content) => set((state) => ({
-    notes: state.notes.map(n => n.id === id ? { ...n, content, timestamp: Date.now() } : n)
-  })),
+      updateNote: (id, content) => set((state) => ({
+        notes: state.notes.map(n => n.id === id ? { ...n, content, timestamp: Date.now() } : n)
+      })),
 
-  deleteNote: (id) => set((state) => ({
-    notes: state.notes.filter(n => n.id !== id)
-  })),
+      deleteNote: (id) => set((state) => ({
+        notes: state.notes.filter(n => n.id !== id)
+      })),
 
-  syncState: async (force = false) => {
-    const { isSyncing, lastSyncTime, activeCharacterId: storedActiveCharId, activeWorldId: storedWorldId, selectionLocked } = get();
+      syncState: async (force = false) => {
+        const { isSyncing, lastSyncTime, activeCharacterId: storedActiveCharId, activeWorldId: storedWorldId, selectionLocked } = get();
 
-    // Prevent concurrent syncs and rate limit to max once per 2 seconds unless forced
-    if (isSyncing) {
-      console.log('[GameStateStore] Sync already in progress, skipping');
-      return;
-    }
-
-    const now = Date.now();
-    if (!force && now - lastSyncTime < 2000) {
-      console.log('[GameStateStore] Rate limited, skipping sync');
-      return;
-    }
-
-    console.log('[GameStateStore] Starting sync, selectionLocked:', selectionLocked);
-    set({ isSyncing: true, lastSyncTime: now });
-
-    try {
-      const { mcpManager } = await import('../services/mcpClient');
-
-      // Active character ID (string UUID in rpg-mcp)
-      let activeCharId: string | null = storedActiveCharId || null;
-      let activeWorldId: string | null = storedWorldId || null;
-
-      // ============================================
-      // 1. Fetch Characters from rpg-mcp
-      // ============================================
-      try {
-        console.log('[GameStateStore] Listing characters...');
-
-        const listResult = await mcpManager.gameStateClient.callTool('list_characters', {});
-        console.log('[GameStateStore] Raw list_characters result:', listResult);
-
-        // Parse using utility - handles both MCP wrapper and direct JSON
-        const listData = parseMcpResponse<{ characters: any[]; count: number }>(
-          listResult, 
-          { characters: [], count: 0 }
-        );
-        
-        console.log('[GameStateStore] Parsed characters data:', listData);
-        console.log('[GameStateStore] Found', listData.count || listData.characters?.length || 0, 'characters');
-
-        const characters = listData.characters || [];
-
-        if (characters.length > 0) {
-          // Parse all characters
-          const allCharacters: CharacterStats[] = [];
-          
-          for (const char of characters) {
-            const charData = parseCharacterFromJson(char);
-            if (charData) {
-              allCharacters.push(charData);
-            }
-          }
-
-          console.log('[GameStateStore] Loaded', allCharacters.length, 'valid characters');
-
-          if (allCharacters.length > 0) {
-            // Use existing active character if still valid, otherwise use first
-            const currentActiveId = activeCharId;
-            const stillExists = currentActiveId && allCharacters.find(c => c.id === currentActiveId);
-
-            // Respect selection lock - don't change selection if locked
-            if (selectionLocked && stillExists) {
-              // Keep current selection, just update the party list and character data
-              const updatedChar = allCharacters.find(c => c.id === currentActiveId)!;
-              set({
-                activeCharacter: updatedChar,
-                party: allCharacters
-              });
-              console.log('[GameStateStore] Selection locked, keeping character:', currentActiveId);
-            } else {
-              // No lock or current selection invalid - pick character
-              const chosen = stillExists ? allCharacters.find(c => c.id === currentActiveId)! : allCharacters[0];
-              set({
-                activeCharacter: chosen,
-                activeCharacterId: chosen.id || null,
-                party: allCharacters
-              });
-              activeCharId = chosen.id || null;
-              console.log('[GameStateStore] Set active character:', chosen.name, chosen.id);
-            }
-          } else {
-            set({ party: [], activeCharacter: null, activeCharacterId: null });
-            activeCharId = null;
-          }
-        } else {
-          console.log('[GameStateStore] No characters found in database');
-          set({ party: [], activeCharacter: null, activeCharacterId: null });
-          activeCharId = null;
-        }
-      } catch (e) {
-        console.warn('[GameStateStore] Failed to fetch character list:', e);
-      }
-
-      if (activeCharId) {
-        console.log('[GameStateStore] Syncing data for character ID:', activeCharId);
-
-        // ============================================
-        // 2. Batch fetch inventory and quests in parallel
-        // ============================================
-        const batchResults = await executeBatchToolCalls(mcpManager.gameStateClient, [
-          { name: 'get_inventory_detailed', args: { characterId: activeCharId } },
-          { name: 'get_quest_log', args: { characterId: activeCharId } }
-        ]);
-
-        // Process inventory result
-        const inventoryResult = batchResults.find(r => r.name === 'get_inventory_detailed');
-        if (inventoryResult && !inventoryResult.error) {
-          const inventoryData = parseMcpResponse<any>(inventoryResult.result, null);
-          
-          if (inventoryData) {
-            const items = parseInventoryFromJson(inventoryData);
-            console.log('[GameStateStore] Parsed', items.length, 'inventory items');
-            
-            set((state) => {
-              // Update equipment from inventory if available
-              let newActiveCharacter = state.activeCharacter;
-              
-              if (newActiveCharacter) {
-                let armor = newActiveCharacter.equipment?.armor || 'None';
-                let weapons: string[] = newActiveCharacter.equipment?.weapons || [];
-                let other: string[] = newActiveCharacter.equipment?.other || [];
-
-                if (inventoryData.equipment) {
-                  const equipment = inventoryData.equipment;
-                  armor = equipment.armor || armor;
-                  weapons = [equipment.mainhand, equipment.offhand].filter(Boolean);
-                  other = [equipment.head, equipment.feet, equipment.accessory].filter(Boolean);
-                } else {
-                  const equippedItems = items.filter(i => i.equipped);
-                  const armorItem = equippedItems.find(i => (i.type || '').toLowerCase() === 'armor');
-                  const weaponItems = equippedItems.filter(i => (i.type || '').toLowerCase() === 'weapon');
-                  if (armorItem) armor = armorItem.name;
-                  if (weaponItems.length > 0) weapons = weaponItems.map(w => w.name);
-                }
-
-                newActiveCharacter = {
-                  ...newActiveCharacter,
-                  equipment: { armor, weapons, other }
-                };
-              }
-              
-              return {
-                inventory: items,
-                activeCharacter: newActiveCharacter
-              };
-            });
-          }
-        } else if (inventoryResult?.error) {
-          console.warn('[GameStateStore] Inventory fetch error:', inventoryResult.error);
+        // Prevent concurrent syncs and rate limit to max once per 2 seconds unless forced
+        if (isSyncing) {
+          console.log('[GameStateStore] Sync already in progress, skipping');
+          return;
         }
 
-        // Process quest result
-        const questResult = batchResults.find(r => r.name === 'get_quest_log');
-        if (questResult && !questResult.error) {
-          const questData = parseMcpResponse<any>(questResult.result, null);
-          
-          if (questData) {
-            const quests = parseQuestsFromResponse(questData);
-            console.log('[GameStateStore] Parsed', quests.length, 'quests');
-            
-            // Convert quests to notes for UI display
-            const questNotes = questsToNotes(quests);
-            
-            set({ 
-              quests,
-              notes: questNotes
-            });
-          }
-        } else if (questResult?.error) {
-          console.warn('[GameStateStore] Quest fetch error:', questResult.error);
+        const now = Date.now();
+        if (!force && now - lastSyncTime < 2000) {
+          console.log('[GameStateStore] Rate limited, skipping sync');
+          return;
         }
-      } else {
-        console.log('[GameStateStore] No active character ID, skipping inventory/quest sync');
-        set({ inventory: [], quests: [], notes: [] });
-      }
 
-      // ============================================
-      // 3. Fetch Worlds and active world state
-      // ============================================
-      try {
-        const worldsResult = await mcpManager.gameStateClient.callTool('list_worlds', {});
-        const worldsData = parseMcpResponse<any>(worldsResult, { worlds: [], count: 0 });
-        const worlds = worldsData.worlds || [];
-        set({ worlds });
+        console.log('[GameStateStore] Starting sync, selectionLocked:', selectionLocked, 'activeCharacterId:', storedActiveCharId);
+        set({ isSyncing: true, lastSyncTime: now });
 
-        if (worlds.length > 0) {
-          const existingWorld = activeWorldId && worlds.find((w: any) => w.id === activeWorldId);
+        try {
+          const { mcpManager } = await import('../services/mcpClient');
 
-          // Respect selection lock - don't change world selection if locked
-          let chosenWorld;
-          if (selectionLocked && existingWorld) {
-            chosenWorld = existingWorld;
-            console.log('[GameStateStore] Selection locked, keeping world:', activeWorldId);
-          } else {
-            chosenWorld = existingWorld || worlds[0];
-            activeWorldId = chosenWorld.id || null;
-            set({ activeWorldId });
-            console.log('[GameStateStore] Set active world:', chosenWorld.name, chosenWorld.id);
-          }
+          // Active character ID (string UUID in rpg-mcp)
+          let activeCharId: string | null = storedActiveCharId || null;
+          let activeWorldId: string | null = storedWorldId || null;
 
-          // Fetch detailed world info
-          let worldDetails: any = null;
+          // ============================================
+          // 1. Fetch Characters from rpg-mcp
+          // ============================================
           try {
-            worldDetails = await mcpManager.gameStateClient.callTool('get_world', { id: chosenWorld.id });
-          } catch (err) {
-            console.warn('[GameStateStore] get_world failed, trying get_world_state', err);
-            try {
-              worldDetails = await mcpManager.gameStateClient.callTool('get_world_state', { worldId: chosenWorld.id });
-            } catch (err2) {
-              console.warn('[GameStateStore] get_world_state failed:', err2);
+            console.log('[GameStateStore] Listing characters...');
+
+            const listResult = await mcpManager.gameStateClient.callTool('list_characters', {});
+            console.log('[GameStateStore] Raw list_characters result:', listResult);
+
+            // Parse using utility - handles both MCP wrapper and direct JSON
+            const listData = parseMcpResponse<{ characters: any[]; count: number }>(
+              listResult, 
+              { characters: [], count: 0 }
+            );
+            
+            console.log('[GameStateStore] Parsed characters data:', listData);
+            console.log('[GameStateStore] Found', listData.count || listData.characters?.length || 0, 'characters');
+
+            const characters = listData.characters || [];
+
+            if (characters.length > 0) {
+              // Parse all characters
+              const allCharacters: CharacterStats[] = [];
+              
+              for (const char of characters) {
+                const charData = parseCharacterFromJson(char);
+                if (charData) {
+                  allCharacters.push(charData);
+                }
+              }
+
+              console.log('[GameStateStore] Loaded', allCharacters.length, 'valid characters');
+
+              if (allCharacters.length > 0) {
+                // Use existing active character if still valid, otherwise use first
+                const currentActiveId = activeCharId;
+                const stillExists = currentActiveId && allCharacters.find(c => c.id === currentActiveId);
+
+                // Respect selection lock - don't change selection if locked
+                if (selectionLocked && stillExists) {
+                  // Keep current selection, just update the party list and character data
+                  const updatedChar = allCharacters.find(c => c.id === currentActiveId)!;
+                  set({
+                    activeCharacter: updatedChar,
+                    party: allCharacters
+                  });
+                  console.log('[GameStateStore] Selection locked, keeping character:', currentActiveId);
+                } else if (stillExists) {
+                  // Selection not locked but current selection is still valid - keep it but update data
+                  const updatedChar = allCharacters.find(c => c.id === currentActiveId)!;
+                  set({
+                    activeCharacter: updatedChar,
+                    activeCharacterId: currentActiveId,
+                    party: allCharacters
+                  });
+                  activeCharId = currentActiveId;
+                  console.log('[GameStateStore] Keeping valid character:', updatedChar.name, currentActiveId);
+                } else {
+                  // No lock and current selection invalid - pick first character
+                  const chosen = allCharacters[0];
+                  set({
+                    activeCharacter: chosen,
+                    activeCharacterId: chosen.id || null,
+                    party: allCharacters
+                  });
+                  activeCharId = chosen.id || null;
+                  console.log('[GameStateStore] Set active character:', chosen.name, chosen.id);
+                }
+              } else {
+                set({ party: [], activeCharacter: null, activeCharacterId: null });
+                activeCharId = null;
+              }
+            } else {
+              console.log('[GameStateStore] No characters found in database');
+              set({ party: [], activeCharacter: null, activeCharacterId: null });
+              activeCharId = null;
             }
+          } catch (e) {
+            console.warn('[GameStateStore] Failed to fetch character list:', e);
           }
 
-          if (worldDetails) {
-            const parsedWorld = parseWorldFromResponse(parseMcpResponse<any>(worldDetails, worldDetails));
-            set({ world: parsedWorld });
+          if (activeCharId) {
+            console.log('[GameStateStore] Syncing data for character ID:', activeCharId);
+
+            // ============================================
+            // 2. Batch fetch inventory and quests in parallel
+            // ============================================
+            const batchResults = await executeBatchToolCalls(mcpManager.gameStateClient, [
+              { name: 'get_inventory_detailed', args: { characterId: activeCharId } },
+              { name: 'get_quest_log', args: { characterId: activeCharId } }
+            ]);
+
+            // Process inventory result
+            const inventoryResult = batchResults.find(r => r.name === 'get_inventory_detailed');
+            if (inventoryResult && !inventoryResult.error) {
+              const inventoryData = parseMcpResponse<any>(inventoryResult.result, null);
+              
+              if (inventoryData) {
+                const items = parseInventoryFromJson(inventoryData);
+                console.log('[GameStateStore] Parsed', items.length, 'inventory items');
+                
+                set((state) => {
+                  // Update equipment from inventory if available
+                  let newActiveCharacter = state.activeCharacter;
+                  
+                  if (newActiveCharacter) {
+                    let armor = newActiveCharacter.equipment?.armor || 'None';
+                    let weapons: string[] = newActiveCharacter.equipment?.weapons || [];
+                    let other: string[] = newActiveCharacter.equipment?.other || [];
+
+                    if (inventoryData.equipment) {
+                      const equipment = inventoryData.equipment;
+                      armor = equipment.armor || armor;
+                      weapons = [equipment.mainhand, equipment.offhand].filter(Boolean);
+                      other = [equipment.head, equipment.feet, equipment.accessory].filter(Boolean);
+                    } else {
+                      const equippedItems = items.filter(i => i.equipped);
+                      const armorItem = equippedItems.find(i => (i.type || '').toLowerCase() === 'armor');
+                      const weaponItems = equippedItems.filter(i => (i.type || '').toLowerCase() === 'weapon');
+                      if (armorItem) armor = armorItem.name;
+                      if (weaponItems.length > 0) weapons = weaponItems.map(w => w.name);
+                    }
+
+                    newActiveCharacter = {
+                      ...newActiveCharacter,
+                      equipment: { armor, weapons, other }
+                    };
+                  }
+                  
+                  return {
+                    inventory: items,
+                    activeCharacter: newActiveCharacter
+                  };
+                });
+              }
+            } else if (inventoryResult?.error) {
+              console.warn('[GameStateStore] Inventory fetch error:', inventoryResult.error);
+            }
+
+            // Process quest result
+            const questResult = batchResults.find(r => r.name === 'get_quest_log');
+            if (questResult && !questResult.error) {
+              const questData = parseMcpResponse<any>(questResult.result, null);
+              
+              if (questData) {
+                const quests = parseQuestsFromResponse(questData);
+                console.log('[GameStateStore] Parsed', quests.length, 'quests');
+                
+                // Convert quests to notes for UI display
+                const questNotes = questsToNotes(quests);
+                
+                set({ 
+                  quests,
+                  notes: questNotes
+                });
+              }
+            } else if (questResult?.error) {
+              console.warn('[GameStateStore] Quest fetch error:', questResult.error);
+            }
           } else {
-            set({ world: parseWorldFromResponse(chosenWorld) });
+            console.log('[GameStateStore] No active character ID, skipping inventory/quest sync');
+            set({ inventory: [], quests: [], notes: [] });
           }
-        } else {
-          set({ world: parseWorldFromResponse(null), activeWorldId: null });
+
+          // ============================================
+          // 3. Fetch Worlds and active world state
+          // ============================================
+          try {
+            const worldsResult = await mcpManager.gameStateClient.callTool('list_worlds', {});
+            const worldsData = parseMcpResponse<any>(worldsResult, { worlds: [], count: 0 });
+            const worlds = worldsData.worlds || [];
+            set({ worlds });
+
+            if (worlds.length > 0) {
+              const existingWorld = activeWorldId && worlds.find((w: any) => w.id === activeWorldId);
+
+              // Respect selection lock - don't change world selection if locked
+              let chosenWorld;
+              if (selectionLocked && existingWorld) {
+                chosenWorld = existingWorld;
+                console.log('[GameStateStore] Selection locked, keeping world:', activeWorldId);
+              } else if (existingWorld) {
+                // Not locked but valid - keep it
+                chosenWorld = existingWorld;
+                console.log('[GameStateStore] Keeping valid world:', activeWorldId);
+              } else {
+                chosenWorld = worlds[0];
+                activeWorldId = chosenWorld.id || null;
+                set({ activeWorldId });
+                console.log('[GameStateStore] Set active world:', chosenWorld.name, chosenWorld.id);
+              }
+
+              // Fetch detailed world info
+              let worldDetails: any = null;
+              try {
+                worldDetails = await mcpManager.gameStateClient.callTool('get_world', { id: chosenWorld.id });
+              } catch (err) {
+                console.warn('[GameStateStore] get_world failed, trying get_world_state', err);
+                try {
+                  worldDetails = await mcpManager.gameStateClient.callTool('get_world_state', { worldId: chosenWorld.id });
+                } catch (err2) {
+                  console.warn('[GameStateStore] get_world_state failed:', err2);
+                }
+              }
+
+              if (worldDetails) {
+                const parsedWorld = parseWorldFromResponse(parseMcpResponse<any>(worldDetails, worldDetails));
+                set({ world: parsedWorld });
+              } else {
+                set({ world: parseWorldFromResponse(chosenWorld) });
+              }
+            } else {
+              set({ world: parseWorldFromResponse(null), activeWorldId: null });
+            }
+          } catch (e) {
+            console.warn('[GameStateStore] Failed to fetch worlds:', e);
+          }
+
+          console.log('[GameStateStore] Sync complete');
+          // Unlock selection after successful sync so next sync can auto-select if needed
+          set({ selectionLocked: false });
+
+        } catch (error) {
+          console.error('[GameStateStore] Error syncing game state:', error);
+        } finally {
+          set({ isSyncing: false });
         }
-      } catch (e) {
-        console.warn('[GameStateStore] Failed to fetch worlds:', e);
       }
-
-      console.log('[GameStateStore] Sync complete');
-      // Unlock selection after successful sync so next sync can auto-select if needed
-      set({ selectionLocked: false });
-
-    } catch (error) {
-      console.error('[GameStateStore] Error syncing game state:', error);
-    } finally {
-      set({ isSyncing: false });
+    }),
+    {
+      name: 'quest-keeper-game-state',
+      // Only persist these fields - not the full state (inventory etc. should be synced from backend)
+      partialize: (state) => ({
+        activeCharacterId: state.activeCharacterId,
+        activeWorldId: state.activeWorldId,
+      }),
     }
-  }
-}));
+  )
+);
 
 // Export debounced sync for use in components
 export const debouncedSyncState = debounce(() => {

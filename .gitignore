@@ -41,5 +41,11 @@ Lightweight-CRM---Invoice/
 # Exclude databases EXCEPT the bundled seed
 *.db
 !src-tauri/rpg.db
-# Deprecated components (old MCP servers)  
-_deprecated/ 
+# Deprecated components (old MCP servers)
+_deprecated/
+
+# Windows reserved filenames (can't be deleted normally)
+nul
+con
+prn
+aux

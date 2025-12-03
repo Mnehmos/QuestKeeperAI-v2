@@ -18,7 +18,7 @@ interface WorldEnvironmentOverlayProps {
 export const WorldEnvironmentOverlay: React.FC<WorldEnvironmentOverlayProps> = ({
   worldState,
   position = 'top-right',
-  compact = false,
+  compact: _compact = false,
 }) => {
   if (!worldState) return null;
 

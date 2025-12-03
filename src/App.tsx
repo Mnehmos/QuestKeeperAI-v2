@@ -3,11 +3,13 @@ import { AppLayout } from "./components/layout/AppLayout";
 import { mcpManager } from "./services/mcpClient";
 import { useGameStateStore } from "./stores/gameStateStore";
 import { useCombatStore } from "./stores/combatStore";
+import { usePartyStore } from "./stores/partyStore";
 import "./App.css";
 
 function App() {
   const syncState = useGameStateStore((state) => state.syncState);
   const syncCombatState = useCombatStore((state) => state.syncCombatState);
+  const initializeParty = usePartyStore((state) => state.initialize);
 
   useEffect(() => {
     const initMcp = async () => {
@@ -15,7 +17,11 @@ function App() {
         await mcpManager.initializeAll();
         console.log("[App] MCP Initialized successfully");
 
-        // Initial sync
+        // Initialize party store first (it will sync active character to gameState)
+        console.log("[App] Initializing party store...");
+        await initializeParty();
+
+        // Initial sync for game state (will respect party's active character)
         console.log("[App] Starting initial state sync...");
         syncState();
         syncCombatState();

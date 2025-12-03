@@ -6,7 +6,15 @@
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run tauri:*)",
-      "Bash(npm run build:binaries:*)"
+      "Bash(npm run build:binaries:*)",
+      "Bash(node --version)",
+      "Bash(dir:*)",
+      "Bash(npx nvm list)",
+      "Bash(npm rebuild:*)",
+      "Bash(npx prebuild-install:*)",
+      "Bash(nvm version:*)",
+      "Bash(del \"\\?\\C:\\Users\\Vario\\OneDrive\\Desktop\\QuestKeeperAI-v2\\nul\")",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

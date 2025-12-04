@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { mcpManager } from '../../services/mcpClient';
 import { useGameStateStore } from '../../stores/gameStateStore';
+import { parseMcpResponse } from '../../utils/mcpUtils';
 
 interface CharacterCreationModalProps {
     isOpen: boolean;
@@ -50,7 +51,14 @@ const PORTRAIT_COLORS = [
 ];
 
 type StatName = 'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha';
-type AbilityMethod = 'pointBuy' | 'standardArray' | 'manual';
+type AbilityMethod = 'roll' | 'pointBuy' | 'standardArray' | 'manual';
+
+interface RollResult {
+    dice: number[];
+    dropped: number;
+    total: number;
+    isRolling?: boolean;
+}
 
 const STAT_NAMES: StatName[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
 const STAT_LABELS: Record<StatName, string> = {
@@ -84,6 +92,36 @@ function formatModifier(mod: number): string {
     return mod >= 0 ? `+${mod}` : `${mod}`;
 }
 
+// Helper component to render dice with only one dropped die crossed out
+const DiceDisplay: React.FC<{ roll: RollResult }> = ({ roll }) => {
+    let droppedShown = false;
+    
+    return (
+        <>
+            <span className="text-xs text-terminal-green/60">[</span>
+            {roll.dice.map((d, i) => {
+                // Only mark the first occurrence of the dropped value as dropped
+                const isDropped = !droppedShown && d === roll.dropped;
+                if (isDropped) droppedShown = true;
+                
+                return (
+                    <span
+                        key={i}
+                        className={`text-sm font-mono ${
+                            isDropped 
+                                ? 'text-red-500/50 line-through' 
+                                : 'text-terminal-green'
+                        }`}
+                    >
+                        {d}{i < roll.dice.length - 1 ? ',' : ''}
+                    </span>
+                );
+            })}
+            <span className="text-xs text-terminal-green/60">]</span>
+        </>
+    );
+};
+
 export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ isOpen, onClose }) => {
     // Basic info
     const [name, setName] = useState('');
@@ -94,13 +132,19 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
     const [background, setBackground] = useState('');
     
     // Ability scores
-    const [abilityMethod, setAbilityMethod] = useState<AbilityMethod>('pointBuy');
+    const [abilityMethod, setAbilityMethod] = useState<AbilityMethod>('roll');
     const [baseStats, setBaseStats] = useState<Record<StatName, number>>({
         str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10
     });
     const [standardArrayAssignment, setStandardArrayAssignment] = useState<Record<StatName, number | null>>({
         str: null, dex: null, con: null, int: null, wis: null, cha: null
     });
+    
+    // Roll results for dice rolling method
+    const [rollResults, setRollResults] = useState<Record<StatName, RollResult | null>>({
+        str: null, dex: null, con: null, int: null, wis: null, cha: null
+    });
+    const [isRollingAll, setIsRollingAll] = useState(false);
     
     // Half-Elf bonus stats
     const [halfElfBonuses, setHalfElfBonuses] = useState<StatName[]>([]);
@@ -111,6 +155,134 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
     const [error, setError] = useState<string | null>(null);
     
     const syncState = useGameStateStore((state) => state.syncState);
+    const setActiveCharacterId = useGameStateStore((state) => state.setActiveCharacterId);
+
+    // Local random roll (4d6 drop lowest) - used as fallback or when MCP doesn't return dice details
+    const rollLocalDice = useCallback(() => {
+        const dice = Array.from({ length: 4 }, () => Math.floor(Math.random() * 6) + 1);
+        const sorted = [...dice].sort((a, b) => a - b);
+        const dropped = sorted[0];
+        const total = sorted.slice(1).reduce((a, b) => a + b, 0);
+        return { dice, dropped, total };
+    }, []);
+
+    // Roll a single stat using MCP dice_roll tool (4d6 drop lowest)
+    const rollStat = useCallback(async (stat: StatName) => {
+        // Mark as rolling
+        setRollResults(prev => ({
+            ...prev,
+            [stat]: { dice: [], dropped: 0, total: 0, isRolling: true }
+        }));
+
+        try {
+            const result = await mcpManager.gameStateClient.callTool('dice_roll', {
+                expression: '4d6dl1'  // 4d6 drop lowest
+            });
+            
+            console.log('[DiceRoll] Raw MCP result:', JSON.stringify(result).slice(0, 500));
+            
+            const data = parseMcpResponse<any>(result, null);
+            console.log('[DiceRoll] Parsed data:', data ? JSON.stringify(data).slice(0, 500) : 'null');
+            
+            if (data) {
+                // Parse the roll result - handle different response formats
+                let total: number | undefined;
+                let rolls: number[] = [];
+                let dropped: number;
+
+                // Try to extract total
+                if (typeof data.total === 'number') {
+                    total = data.total;
+                } else if (typeof data.result === 'number') {
+                    total = data.result;
+                }
+
+                // Try to extract individual dice from various possible fields
+                if (data.rolls && Array.isArray(data.rolls)) {
+                    rolls = data.rolls.map((r: any) => typeof r === 'number' ? r : r.value || r.result || 0);
+                    console.log('[DiceRoll] Found rolls array:', rolls);
+                } else if (data.dice && Array.isArray(data.dice)) {
+                    rolls = data.dice.map((d: any) => typeof d === 'number' ? d : d.value || d.result || 0);
+                    console.log('[DiceRoll] Found dice array:', rolls);
+                } else if (data.details?.rolls && Array.isArray(data.details.rolls)) {
+                    rolls = data.details.rolls;
+                    console.log('[DiceRoll] Found details.rolls:', rolls);
+                } else if (typeof data.breakdown === 'string') {
+                    // Parse from breakdown string like "4d6dl1: [4,3,5,2] (dropped 2) = 12"
+                    const match = data.breakdown.match(/\[([^\]]+)\]/);
+                    if (match) {
+                        rolls = match[1].split(',').map((n: string) => parseInt(n.trim())).filter((n: number) => !isNaN(n));
+                        console.log('[DiceRoll] Parsed from breakdown:', rolls);
+                    }
+                }
+
+                // If we got dice but no total, calculate it
+                if (rolls.length >= 4 && total === undefined) {
+                    const sorted = [...rolls].sort((a, b) => a - b);
+                    total = sorted.slice(1).reduce((a, b) => a + b, 0);
+                }
+                
+                // If we still don't have valid dice, use local random roll
+                if (rolls.length < 4 || total === undefined) {
+                    console.log('[DiceRoll] Insufficient data from MCP, using local random roll');
+                    const localRoll = rollLocalDice();
+                    rolls = localRoll.dice;
+                    dropped = localRoll.dropped;
+                    total = localRoll.total;
+                } else {
+                    // Find dropped die
+                    if (data.dropped && Array.isArray(data.dropped) && data.dropped.length > 0) {
+                        dropped = data.dropped[0];
+                    } else {
+                        const sorted = [...rolls].sort((a, b) => a - b);
+                        dropped = sorted[0];
+                    }
+                }
+                
+                console.log('[DiceRoll] Final result:', { dice: rolls, dropped, total });
+                
+                setRollResults(prev => ({
+                    ...prev,
+                    [stat]: { dice: rolls, dropped, total, isRolling: false }
+                }));
+                
+                setBaseStats(prev => ({ ...prev, [stat]: total! }));
+            } else {
+                // No data from MCP, use local roll
+                console.log('[DiceRoll] No data from MCP, using local roll');
+                const localRoll = rollLocalDice();
+                
+                setRollResults(prev => ({
+                    ...prev,
+                    [stat]: { ...localRoll, isRolling: false }
+                }));
+                
+                setBaseStats(prev => ({ ...prev, [stat]: localRoll.total }));
+            }
+        } catch (err) {
+            console.error('[DiceRoll] Failed via MCP:', err);
+            // Fallback to local roll
+            const localRoll = rollLocalDice();
+            
+            setRollResults(prev => ({
+                ...prev,
+                [stat]: { ...localRoll, isRolling: false }
+            }));
+            
+            setBaseStats(prev => ({ ...prev, [stat]: localRoll.total }));
+        }
+    }, [rollLocalDice]);
+
+    // Roll all stats sequentially with animation
+    const rollAllStats = useCallback(async () => {
+        setIsRollingAll(true);
+        for (const stat of STAT_NAMES) {
+            await rollStat(stat);
+            // Small delay between rolls for visual effect
+            await new Promise(r => setTimeout(r, 200));
+        }
+        setIsRollingAll(false);
+    }, [rollStat]);
 
     // Calculate racial bonuses
     const racialBonuses = useMemo(() => {
@@ -174,6 +346,11 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
         return STANDARD_ARRAY.filter(v => !usedArrayValues.includes(v));
     }, [usedArrayValues]);
 
+    // Check if all stats have been rolled
+    const allStatsRolled = useMemo(() => {
+        return STAT_NAMES.every(stat => rollResults[stat] !== null && !rollResults[stat]?.isRolling);
+    }, [rollResults]);
+
     // HP calculation
     const maxHp = useMemo(() => {
         const classData = CLASSES[charClass];
@@ -192,6 +369,9 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
     const isHalfElfValid = race !== 'halfElf' || halfElfBonuses.length === 2;
     
     const isAbilitiesValid = useMemo(() => {
+        if (abilityMethod === 'roll') {
+            return allStatsRolled;
+        }
         if (abilityMethod === 'pointBuy') {
             return pointsRemaining >= 0 && pointsRemaining <= POINT_BUY_TOTAL;
         }
@@ -199,7 +379,7 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
             return usedArrayValues.length === 6;
         }
         return STAT_NAMES.every(stat => baseStats[stat] >= 3 && baseStats[stat] <= 18);
-    }, [abilityMethod, pointsRemaining, usedArrayValues, baseStats]);
+    }, [abilityMethod, allStatsRolled, pointsRemaining, usedArrayValues, baseStats]);
 
     const resetForm = useCallback(() => {
         setName('');
@@ -210,8 +390,9 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
         setBackground('');
         setBaseStats({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
         setStandardArrayAssignment({ str: null, dex: null, con: null, int: null, wis: null, cha: null });
+        setRollResults({ str: null, dex: null, con: null, int: null, wis: null, cha: null });
         setHalfElfBonuses([]);
-        setAbilityMethod('pointBuy');
+        setAbilityMethod('roll');
         setStep('basics');
         setError(null);
     }, []);
@@ -253,6 +434,24 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
         }
     };
 
+    const handleMethodChange = (method: AbilityMethod) => {
+        setAbilityMethod(method);
+        // Reset roll results when switching away from roll
+        if (method !== 'roll') {
+            setRollResults({ str: null, dex: null, con: null, int: null, wis: null, cha: null });
+        }
+        // Reset base stats for point buy
+        if (method === 'pointBuy') {
+            setBaseStats({ str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 });
+        } else if (method === 'manual' || method === 'roll') {
+            setBaseStats({ str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 });
+        }
+        // Reset standard array
+        if (method === 'standardArray') {
+            setStandardArrayAssignment({ str: null, dex: null, con: null, int: null, wis: null, cha: null });
+        }
+    };
+
     const handleSubmit = async () => {
         setLoading(true);
         setError(null);
@@ -290,7 +489,22 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
             });
 
             console.log('[CharacterCreation] Success:', result);
+            
+            // Parse the result to get the new character's ID
+            const createdChar = parseMcpResponse<{ id?: string; characterId?: string }>(result, null);
+            const newCharacterId = createdChar?.id || createdChar?.characterId;
+            
+            // Sync state first to ensure the new character is in the store
             await syncState(true);
+            
+            // Set the newly created character as active
+            if (newCharacterId) {
+                console.log('[CharacterCreation] Setting active character:', newCharacterId);
+                setActiveCharacterId(newCharacterId, true);
+            } else {
+                console.warn('[CharacterCreation] Could not extract character ID from result:', result);
+            }
+            
             resetForm();
             onClose();
         } catch (err) {
@@ -431,27 +645,97 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
             {/* Method Selection */}
             <div>
                 <label className="block text-sm font-bold text-terminal-green mb-2">ABILITY SCORE METHOD</label>
-                <div className="flex gap-2">
+                <div className="grid grid-cols-4 gap-2">
                     {([
-                        { key: 'pointBuy', label: 'Point Buy', desc: '27 points to spend' },
-                        { key: 'standardArray', label: 'Standard', desc: '15,14,13,12,10,8' },
-                        { key: 'manual', label: 'Manual', desc: 'Enter directly' }
+                        { key: 'roll', label: '🎲 Roll', desc: '4d6 drop lowest' },
+                        { key: 'pointBuy', label: '🎯 Point Buy', desc: '27 points' },
+                        { key: 'standardArray', label: '📊 Standard', desc: '15,14,13,12,10,8' },
+                        { key: 'manual', label: '✏️ Manual', desc: 'Enter directly' }
                     ] as const).map(({ key, label, desc }) => (
                         <button
                             key={key}
-                            onClick={() => setAbilityMethod(key)}
-                            className={`flex-1 py-3 px-2 rounded-lg text-sm transition-all ${
+                            onClick={() => handleMethodChange(key)}
+                            className={`py-3 px-2 rounded-lg text-sm transition-all ${
                                 abilityMethod === key
                                     ? 'bg-terminal-green text-black font-bold shadow-[0_0_15px_rgba(0,255,0,0.4)]'
                                     : 'border border-terminal-green/50 text-terminal-green hover:bg-terminal-green/10'
                             }`}
                         >
-                            <div className="font-bold">{label}</div>
-                            <div className={`text-xs mt-1 ${abilityMethod === key ? 'text-black/60' : 'text-terminal-green/50'}`}>{desc}</div>
+                            <div className="font-bold text-xs">{label}</div>
+                            <div className={`text-[10px] mt-1 ${abilityMethod === key ? 'text-black/60' : 'text-terminal-green/50'}`}>{desc}</div>
                         </button>
                     ))}
                 </div>
             </div>
+
+            {/* Roll Method Interface */}
+            {abilityMethod === 'roll' && (
+                <div className="border border-terminal-green/30 rounded-lg p-4 bg-terminal-green/5">
+                    {/* Roll All Button */}
+                    <button
+                        onClick={rollAllStats}
+                        disabled={isRollingAll}
+                        className="w-full py-3 mb-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold rounded-lg hover:from-purple-500 hover:to-pink-500 disabled:opacity-50 transition-all shadow-[0_0_20px_rgba(168,85,247,0.4)] hover:shadow-[0_0_30px_rgba(168,85,247,0.6)] flex items-center justify-center gap-2"
+                    >
+                        {isRollingAll ? (
+                            <>
+                                <span className="animate-bounce">🎲</span>
+                                Rolling...
+                            </>
+                        ) : (
+                            <>🎲 ROLL ALL STATS</>
+                        )}
+                    </button>
+                    
+                    <div className="space-y-3">
+                        {STAT_NAMES.map(stat => {
+                            const roll = rollResults[stat];
+                            return (
+                                <div key={stat} className="flex items-center gap-3">
+                                    <span className="text-xl w-8">{STAT_ICONS[stat]}</span>
+                                    <span className="w-20 text-sm font-medium">{STAT_LABELS[stat]}</span>
+                                    
+                                    {/* Roll button for individual stat */}
+                                    <button
+                                        onClick={() => rollStat(stat)}
+                                        disabled={roll?.isRolling}
+                                        className="px-3 py-1 bg-purple-600/50 text-white text-xs rounded hover:bg-purple-500 disabled:opacity-50 transition-colors"
+                                    >
+                                        {roll?.isRolling ? '...' : '🎲'}
+                                    </button>
+                                    
+                                    {/* Dice display - now uses helper component */}
+                                    <div className="flex-1 flex items-center gap-1">
+                                        {roll && roll.dice.length > 0 ? (
+                                            <DiceDisplay roll={roll} />
+                                        ) : (
+                                            <span className="text-xs text-terminal-green/40">Not rolled</span>
+                                        )}
+                                    </div>
+                                    
+                                    {/* Racial bonus */}
+                                    {racialBonuses[stat] > 0 && (
+                                        <span className="text-cyan-400 text-sm font-bold">+{racialBonuses[stat]}</span>
+                                    )}
+                                    
+                                    {/* Final score */}
+                                    <span className="ml-auto font-bold text-terminal-green-bright w-20 text-right">
+                                        {roll ? (
+                                            <>= {finalStats[stat]} <span className="text-xs">({formatModifier(calculateModifier(finalStats[stat]))})</span></>
+                                        ) : (
+                                            <span className="text-terminal-green/40">—</span>
+                                        )}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                    
+                    {!allStatsRolled && (
+                        <p className="text-amber-400 text-xs mt-3 text-center">Roll all stats to continue</p>
+                    )}
+                </div>
+            )}
 
             {/* Point Buy Interface */}
             {abilityMethod === 'pointBuy' && (

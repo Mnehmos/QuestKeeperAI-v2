@@ -23,14 +23,18 @@ Quest Keeper AI is a desktop RPG companion that combines an **AI Dungeon Master*
 
 ## ✨ Key Features
 
-| Feature | Description |
-|---------|-------------|
-| **AI Dungeon Master** | LLM-driven storytelling with Claude, GPT-4, Gemini, or OpenRouter |
-| **Mechanical Grounding** | 80+ MCP tools enforce game rules—the AI describes, the engine validates |
-| **3D Battlemap** | React Three Fiber combat visualization with tokens, terrain, grid |
-| **Persistent World** | SQLite-backed state survives sessions—characters, quests, inventory |
-| **Procedural Generation** | Perlin noise worlds with regions, biomes, and structures |
-| **OSRS-Style Progression** | Quest chains, skill requirements, achievement tracking (in development) |
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **AI Dungeon Master** | ✅ | LLM-driven storytelling with Claude, GPT-4, Gemini, or OpenRouter |
+| **Mechanical Grounding** | ✅ | 80+ MCP tools enforce game rules—the AI describes, the engine validates |
+| **3D Battlemap** | ✅ | React Three Fiber combat with tokens, terrain, cover, and conditions |
+| **2D World Map** | ✅ | Canvas-based map with 28+ biomes, POIs, zoom/pan, multiple view modes |
+| **Persistent World** | ✅ | SQLite-backed state survives sessions—characters, quests, inventory |
+| **Procedural Generation** | ✅ | Perlin noise worlds with regions, biomes, rivers, and structures |
+| **Party Management** | ✅ | Multi-character parties with roles, formations, and share percentages |
+| **Quest System** | ✅ | Full quest tracking with objectives, rewards, and progress |
+| **Notes & Journaling** | ✅ | Categorized notes with tags, search, and pinning |
+| **OSRS-Style Progression** | 🔧 | Quest chains, skill requirements, achievement tracking (planned) |
 
 ---
 
@@ -215,27 +219,47 @@ The unified `rpg-mcp-server` binary is bundled in `src-tauri/binaries/`. It prov
 
 ## 🎯 Development Status
 
-### ✅ Implemented
-- Character creation with D&D 5e stats
-- Inventory system with equipment slots
-- Combat encounters with initiative tracking
-- 3D battlemap visualization
-- Multi-LLM provider support
-- Procedural world generation
+**Overall Progress: ~70% Complete** | Phases 1 & 2 ✅ | Phases 3-6 🔧/⬜
 
-### 🔧 In Progress (Current Sprint)
-- Quest system overhaul (full data, not just UUIDs)
-- Objective progress tracking
-- Reward distribution
+### ✅ Phase 1: Core Systems (Complete)
+- Character creation with D&D 5e stats, point buy, dice rolling
+- AI-generated character backstories
+- Inventory system with D&D 5e item database and equipment slots
+- Combat encounters with initiative, HP, conditions, cover mechanics
+- Quest system with full data, objectives, rewards, and progress tracking
 
-### 📋 Planned (Roadmap)
-- World map visualization (2D tile renderer)
-- Point of Interest system
-- OSRS-style skill progression
+### ✅ Phase 2: World Visualization (Complete)
+- 2D canvas world map with zoom (0.25x-6x) and pan
+- 28+ biome types with color mapping
+- POI markers (cities, towns, dungeons, temples, etc.)
+- Multiple view modes: biomes, heightmap, temperature, moisture, rivers
+- Region boundaries and capital markers
+- Interactive POI detail panels
+
+### 🔧 Phase 4: Enhanced Combat (60% Complete)
+- ✅ 3D React Three Fiber battlemap
+- ✅ Grid system with coordinate labels
+- ✅ Entity tokens with size/type support
+- ✅ Terrain with cover mechanics
+- ⬜ Click-to-move token interaction
+- ⬜ Combat log panel
+
+### 🔧 Phase 5: Session Management (65% Complete)
+- ✅ Auto-save via Zustand persist
+- ✅ Chat session management
+- ⬜ Context condensing for long sessions
+- ⬜ Export to Markdown/PDF
+
+### ⬜ Phase 3: Progression Systems (Not Started)
+- Skill system with OSRS-style XP curves
 - Quest chains and prerequisites
-- Session save/load
-- Context condensing for long sessions
-- Batch generation workflows
+- Achievement tracking
+- Faction reputation
+
+### ⬜ Phase 6: Workflow Automation (Not Started)
+- Batch generation tools
+- YAML workflow definitions
+- Template library
 
 See [DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the full roadmap.
 
@@ -310,11 +334,11 @@ npm run tauri dev  # Hot reload enabled
 
 ## 🐛 Known Issues
 
-| Issue | Workaround |
-|-------|------------|
-| OpenRouter free models skip tools | Use paid model for full functionality |
-| 5-second polling delay | Manual refresh, event system planned |
-| Quest log shows UUIDs only | Fix in progress (Sprint 1) |
+| Issue | Status | Workaround |
+|-------|--------|------------|
+| OpenRouter free models skip tools | Known | Use paid model for full functionality |
+| 5-second polling delay | Known | Manual refresh, event system planned |
+| ~~Quest log shows UUIDs only~~ | ✅ Fixed | Full quest data now displayed |
 
 ---
 

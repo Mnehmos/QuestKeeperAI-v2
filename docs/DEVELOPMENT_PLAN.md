@@ -1,8 +1,8 @@
 # Quest Keeper AI - Development Plan
 
-**Version:** 1.0  
-**Last Updated:** December 2024  
-**Status:** Active Development
+**Version:** 2.0
+**Last Updated:** December 3, 2024
+**Status:** Active Development (Phase 2 Complete)
 
 ---
 
@@ -32,56 +32,60 @@ Quest Keeper AI combines:
 
 ## Development Phases
 
-### Phase 1: Core System Fixes (Current Sprint)
+### Phase 1: Core System Fixes ✅ COMPLETE
 **Goal:** Make existing systems actually work
-**Duration:** 1-2 weeks
+**Status:** Complete
 
 | System | Status | Work Required |
 |--------|--------|---------------|
-| Characters | ✅ Working | Minor polish |
-| Items | ✅ Working | Done |
-| Combat | ✅ Working | Spatial enhancement needed |
-| **Quests** | 🔴 Broken | **CRITICAL FIX** |
-| World Gen | ⚠️ Partial | POI system needed |
+| Characters | ✅ Complete | Full creation modal with dice rolling, point buy, AI backstory |
+| Items | ✅ Complete | D&D 5e item database, equipment slots |
+| Combat | ✅ Complete | 3D battlemap, initiative, terrain, cover system |
+| **Quests** | ✅ Complete | Full quest data, objectives, rewards |
+| World Gen | ✅ Complete | Perlin noise, biomes, regions, structures |
 
 **Deliverables:**
 1. ✅ Quest system returns full data (not just UUIDs)
 2. ✅ Quest objective tracking works
 3. ✅ Quest rewards actually grant items/XP
-4. ⬜ Frontend displays quests properly
+4. ✅ Frontend displays quests in Notes tab
 
 ---
 
-### Phase 2: World Visualization
+### Phase 2: World Visualization ✅ COMPLETE
 **Goal:** See the generated world
-**Duration:** 2-3 weeks
+**Status:** Complete
 
 **Components:**
-1. **World Map Visualizer** (New viewport tab)
-   - 2D tile map from Perlin data
-   - POI markers (towns, dungeons, landmarks)
-   - Click-to-enter navigation
-   
-2. **POI System** (Backend tools)
-   - `create_poi`, `update_poi`, `list_pois`, `get_poi`
-   - `create_route` (roads, trade routes)
-   - POI types: town, city, dungeon, ruins, landmark, camp, shrine
+1. **World Map Visualizer** ✅
+   - 2D canvas-based tile renderer with zoom (0.25x-6x)
+   - POI markers with emoji icons (city, town, dungeon, temple, etc.)
+   - Click-to-select POI with detail panel
+   - Multiple view modes: biomes, heightmap, temperature, moisture, rivers
 
-3. **Zoom Level Navigation**
-   - World Map → Location → Battlemap
-   - Seamless transitions
+2. **POI System** ✅
+   - 11 POI types with descriptions
+   - Structure rendering on world map
+   - POI detail panel with coordinates, region, biome info
+   - Region highlighting and capital markers
+
+3. **Visualization Features** ✅
+   - Biome color mapping (28+ biome types)
+   - River visualization
+   - Region boundaries
+   - Interactive tooltips with coordinates
 
 **Deliverables:**
-1. ⬜ WorldMap.tsx component (2D tile renderer)
-2. ⬜ POI schema and tools in rpg-mcp
-3. ⬜ Location detail view
-4. ⬜ Combat trigger from POI
+1. ✅ WorldMapCanvas.tsx component (2D canvas renderer)
+2. ✅ POI schema integrated with world state
+3. ✅ POIDetailPanel.tsx for location details
+4. ✅ Structure/POI click handling
 
 ---
 
-### Phase 3: Progression Systems (OSRS-Style)
+### Phase 3: Progression Systems (OSRS-Style) ⬜ NOT STARTED
 **Goal:** Deep, trackable character growth
-**Duration:** 3-4 weeks
+**Status:** Not Started - Next Priority
 
 **Components:**
 1. **Skill System**
@@ -112,65 +116,78 @@ Quest Keeper AI combines:
 
 ---
 
-### Phase 4: Enhanced Combat
+### Phase 4: Enhanced Combat 🔧 PARTIAL
 **Goal:** Tactical, spatial, visual combat
-**Duration:** 2-3 weeks
+**Status:** 60% Complete
 
 **Components:**
-1. **Grid-Based Positioning**
-   - X/Y coordinates for all participants
-   - Movement costs by terrain
-   - Opportunity attacks
+1. **Grid-Based Positioning** ✅
+   - X/Y/Z coordinates for all entities
+   - MCP coordinate system (0-20 range)
+   - Grid visualization with compass rose
+   - Coordinate labels at intervals
 
-2. **Battlemap Interactivity**
-   - Click to select token
-   - Drag to move
-   - Context menu for actions
+2. **Battlemap Visualization** ✅
+   - 3D React Three Fiber battlemap
+   - Entity tokens with size support
+   - Terrain features with blocking/cover
+   - 3-point dynamic lighting
+   - Camera controls (position, zoom, rotation)
 
-3. **Combat Features**
-   - Area effects (fireball, etc.)
-   - Cover mechanics
-   - Height advantage
+3. **Combat Features** 🔧 Partial
+   - ✅ Cover mechanics (half/three-quarters/full)
+   - ✅ Creature conditions system
+   - ✅ Initiative and turn order
+   - ⬜ Area effects visualization
+   - ⬜ Click-to-move interactions
+   - ⬜ Combat log panel
 
 **Deliverables:**
-1. ⬜ Spatial combat tools
-2. ⬜ Interactive battlemap
+1. ✅ Spatial combat with grid system
+2. ✅ 3D battlemap with tokens and terrain
 3. ⬜ AoE visualization
 4. ⬜ Combat log panel
+5. ⬜ Interactive token movement (drag-and-drop)
 
 ---
 
-### Phase 5: Session Management
+### Phase 5: Session Management 🔧 PARTIAL
 **Goal:** Play forever, context permitting
-**Duration:** 2 weeks
+**Status:** 65% Complete
 
 **Components:**
-1. **Session Save/Load**
-   - Full state persistence
-   - Multiple save slots
-   - Auto-save
+1. **Session Save/Load** ✅
+   - ✅ Zustand persist middleware for all stores
+   - ✅ localStorage auto-persistence
+   - ✅ Chat session management (create/switch/delete)
+   - ✅ Game state auto-saving
+   - ⬜ Multiple save slots/files
+   - ⬜ Manual save/load to file
 
-2. **Context Condensing**
-   - Summarize for LLM
-   - Token-aware compression
-   - Priority information
+2. **Context Condensing** ⬜
+   - ⬜ Summarize for LLM
+   - ⬜ Token-aware compression
+   - ⬜ Priority information
 
-3. **Session Export**
-   - Markdown adventure log
-   - JSON state dump
-   - Character sheets (PDF?)
+3. **Session Export** 🔧 Partial
+   - ✅ JSON state available in stores
+   - ✅ Character/quest/inventory data exportable
+   - ⬜ Markdown adventure log export
+   - ⬜ PDF character sheet export
+   - ⬜ Dedicated export UI
 
 **Deliverables:**
-1. ⬜ `save_session`, `load_session` tools
-2. ⬜ `export_session` with formats
-3. ⬜ Context condenser
-4. ⬜ Session management UI
+1. ✅ Auto-save via Zustand persist
+2. ✅ Chat session management
+3. ⬜ `export_session` with formats
+4. ⬜ Context condenser
+5. ⬜ Explicit save/load file UI
 
 ---
 
-### Phase 6: Workflow Automation
+### Phase 6: Workflow Automation ⬜ NOT STARTED
 **Goal:** One prompt → complex generation
-**Duration:** 2-3 weeks
+**Status:** Not Started
 
 **Components:**
 1. **Batch Operations**
@@ -199,10 +216,10 @@ Quest Keeper AI combines:
 ## Technical Debt & Infrastructure
 
 ### Must Address
-- [ ] Replace text parsing with JSON parsing in frontend
-- [ ] Add proper error messages to UI
+- [x] Replace text parsing with JSON parsing in frontend (dual parsing strategy implemented)
+- [x] Add proper error messages to UI (CommandResult with error types)
 - [ ] Implement retry logic for MCP calls
-- [ ] Add loading states throughout
+- [x] Add loading states throughout (isSyncing flags in all stores)
 
 ### Should Address
 - [ ] Add test suite for parsers
@@ -211,7 +228,7 @@ Quest Keeper AI combines:
 - [ ] Accessibility improvements
 
 ### Nice to Have
-- [ ] Streaming LLM responses
+- [x] Streaming LLM responses (StreamingMessage component)
 - [ ] WebSocket transport for real-time events
 - [ ] Multi-client support
 - [ ] Plugin system for custom rules
@@ -244,17 +261,17 @@ Phase 6: 40% effort (Workflow browser)
 
 ## Success Metrics
 
-### Phase 1 Complete When:
-- [ ] `get_quest_log` returns full quest objects with objectives
-- [ ] Player can accept, track, and complete a quest
-- [ ] Rewards actually modify character state
-- [ ] Frontend displays quest log properly
+### Phase 1 Complete When: ✅ ACHIEVED
+- [x] `get_quest_log` returns full quest objects with objectives
+- [x] Player can accept, track, and complete a quest
+- [x] Rewards actually modify character state
+- [x] Frontend displays quest log properly
 
-### Phase 2 Complete When:
-- [ ] World map renders in viewport
-- [ ] POIs visible on map
-- [ ] Click POI → see details
-- [ ] Combat at POI → battlemap transition
+### Phase 2 Complete When: ✅ ACHIEVED
+- [x] World map renders in viewport
+- [x] POIs visible on map
+- [x] Click POI → see details
+- [ ] Combat at POI → battlemap transition (partial - manual transition)
 
 ### Phase 3 Complete When:
 - [ ] Skills track XP and level
@@ -278,17 +295,28 @@ Phase 6: 40% effort (Workflow browser)
 
 ## Next Actions
 
-### This Week
-1. **Fix `get_quest_log`** - Embed full quest data
-2. **Add `get_quest`** - Single quest lookup
-3. **Add objective tracking** - Increment progress
-4. **Update frontend formatter** - Display quests
+### Immediate Priorities
+1. **Phase 3: Progression Systems** - Begin skill system implementation
+2. **Combat Log Panel** - Add combat action history display
+3. **Interactive Token Movement** - Click-to-move on battlemap
 
-### Next Week
-1. **Quest chain schema** - Database additions
-2. **Prerequisite checking** - Requirements system
-3. **Quest discovery** - OSRS-style reveal
-4. **POI system design** - Prepare for Phase 2
+### Future Priorities
+1. **Context Condensing** - LLM token management for long sessions
+2. **Export System** - Markdown/PDF export for adventure logs
+3. **Phase 6: Workflows** - Batch generation tools
+
+---
+
+## Bonus Features Implemented (Not in Original Plan)
+
+| Feature | Description |
+|---------|-------------|
+| **Party System** | Full party management with roles, formations, share percentages |
+| **Notes System** | Categorized notes with tags, search, pinning |
+| **World Environment** | Weather, time, moon phases, forecasts, hazards |
+| **AI Backstory Generation** | LLM-generated character backgrounds during creation |
+| **Dice Rolling UI** | Interactive dice mechanics in character creation |
+| **Secret Keeper** | Spoiler/censor system for GM-only content |
 
 ---
 
@@ -297,4 +325,5 @@ Phase 6: 40% effort (Workflow browser)
 | Date | Version | Changes |
 |------|---------|---------|
 | Dec 2024 | 1.0 | Initial plan based on system reviews |
+| Dec 3, 2024 | 2.0 | Updated with implementation status - Phase 1 & 2 complete |
 

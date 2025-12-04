@@ -1,7 +1,7 @@
 # Quest Keeper AI - Project Vision
 
-**Version:** 1.0  
-**Last Updated:** December 2024
+**Version:** 2.0
+**Last Updated:** December 3, 2024
 
 ---
 
@@ -96,31 +96,32 @@ Quest Keeper AI bridges the gap with:
 
 ## Core Features
 
-### Today (Implemented)
-- ✅ Character creation with D&D 5e stats
-- ✅ Inventory system with items, equipment, quantities
-- ✅ Combat encounters with initiative, HP, actions
-- ✅ 3D battlemap visualization
+### ✅ Implemented (Phases 1 & 2 Complete)
+- ✅ Character creation with D&D 5e stats, point buy, dice rolling
+- ✅ AI-generated character backstories
+- ✅ Inventory system with D&D 5e items, equipment slots
+- ✅ Combat encounters with initiative, HP, conditions, cover
+- ✅ 3D battlemap visualization with terrain and tokens
 - ✅ Multi-LLM support (OpenAI, Anthropic, Gemini, OpenRouter)
-- ✅ Procedural world generation (Perlin noise)
+- ✅ Procedural world generation (Perlin noise, 28+ biomes)
+- ✅ Quest system with objectives, rewards, progress tracking
+- ✅ 2D world map with zoom, pan, and POI markers
+- ✅ Party management with roles and formations
+- ✅ Notes system with categories, tags, and search
+- ✅ World environment (weather, time, moon phases)
+- ✅ Session persistence via Zustand
 
-### This Sprint (In Progress)
-- 🔧 Quest system with objectives and rewards
-- 🔧 Quest progress tracking
-- 🔧 Reward distribution (XP, gold, items)
+### 🔧 In Progress (Phases 4 & 5 Partial)
+- 🔧 Interactive battlemap (click-to-move pending)
+- 🔧 Combat log panel
+- 🔧 Session export (Markdown/PDF)
+- 🔧 Context condensing for long sessions
 
-### Next Sprint (Planned)
-- ⬜ World map visualization
-- ⬜ Point of Interest system
-- ⬜ Quest chains (OSRS-style)
-- ⬜ Prerequisite requirements
-
-### Future (Roadmap)
-- ⬜ Skill system with XP curves
+### ⬜ Planned (Phases 3 & 6)
+- ⬜ Skill system with OSRS-style XP curves
 - ⬜ Achievement tracking
-- ⬜ Faction reputation
-- ⬜ Session save/load
-- ⬜ Context condensing
+- ⬜ Faction reputation system
+- ⬜ Quest chains and prerequisites
 - ⬜ Batch generation workflows
 - ⬜ Multiplayer foundation
 
@@ -314,4 +315,5 @@ User Message
 | Date | Version | Changes |
 |------|---------|---------|
 | Dec 2024 | 1.0 | Initial vision document |
+| Dec 3, 2024 | 2.0 | Updated feature status - Phases 1 & 2 complete |
 

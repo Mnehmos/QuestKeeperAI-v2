@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { usePartyStore, PartyMemberWithCharacter, MemberRole } from '../../stores/partyStore';
+import { useGameStateStore } from '../../stores/gameStateStore';
 
 interface PartyPanelProps {
   onAddMember?: () => void;
@@ -33,6 +34,9 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
   const updateParty = usePartyStore((state) => state.updateParty);
   const isLoading = usePartyStore((state) => state.isLoading);
 
+  // *** UNIFIED SOURCE OF TRUTH: Use gameStateStore for active character ***
+  const activeCharacterId = useGameStateStore((state) => state.activeCharacterId);
+
   const activeParty = activePartyId ? partyDetails[activePartyId] : null;
 
   if (!activeParty) {
@@ -65,8 +69,11 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
     // Leader first, then active character, then by position
     if (a.role === 'leader') return -1;
     if (b.role === 'leader') return 1;
-    if (a.isActive) return -1;
-    if (b.isActive) return 1;
+    // *** Use unified activeCharacterId for sorting ***
+    const aIsActive = a.characterId === activeCharacterId;
+    const bIsActive = b.characterId === activeCharacterId;
+    if (aIsActive) return -1;
+    if (bIsActive) return 1;
     return (a.position || 0) - (b.position || 0);
   });
 
@@ -132,12 +139,14 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
   const renderMemberCard = (member: PartyMemberWithCharacter) => {
     const { character } = member;
     const isExpanded = expandedMember === member.characterId;
+    // *** Use unified activeCharacterId instead of member.isActive ***
+    const isActiveCharacter = member.characterId === activeCharacterId;
 
     return (
       <div
         key={member.characterId}
         className={`rounded-lg border transition-all ${
-          member.isActive
+          isActiveCharacter
             ? 'bg-terminal-green/15 border-terminal-green shadow-[0_0_10px_rgba(0,255,0,0.2)]'
             : 'bg-terminal-green/5 border-terminal-green/30 hover:border-terminal-green/50'
         }`}
@@ -155,12 +164,12 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1">
                 <span
-                  className={`font-medium truncate ${member.isActive ? 'text-terminal-green-bright' : 'text-terminal-green'}`}
+                  className={`font-medium truncate ${isActiveCharacter ? 'text-terminal-green-bright' : 'text-terminal-green'}`}
                   title={character.name}
                 >
                   {character.name}
                 </span>
-                {member.isActive && (
+                {isActiveCharacter && (
                   <span className="text-xs bg-terminal-green/20 text-terminal-green px-1.5 py-0.5 rounded">
                     Playing
                   </span>
@@ -200,7 +209,7 @@ export const PartyPanel: React.FC<PartyPanelProps> = ({
         {isExpanded && (
           <div className="px-2 pb-2 pt-1 border-t border-terminal-green/20">
             <div className="flex flex-wrap gap-1">
-              {!member.isActive && (
+              {!isActiveCharacter && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { mcpManager } from '../../services/mcpClient';
 import { useGameStateStore } from '../../stores/gameStateStore';
+import { usePartyStore } from '../../stores/partyStore';
 import { parseMcpResponse } from '../../utils/mcpUtils';
 import { generateBackgroundStory } from '../../utils/aiBackgroundGenerator';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -167,6 +168,10 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
     
     const syncState = useGameStateStore((state) => state.syncState);
     const setActiveCharacterId = useGameStateStore((state) => state.setActiveCharacterId);
+
+    // Party store for auto-adding to party
+    const activePartyId = usePartyStore((state) => state.activePartyId);
+    const syncPartyDetails = usePartyStore((state) => state.syncPartyDetails);
 
     // AI Background Generation handler
     const handleGenerateBackground = useCallback(async () => {
@@ -535,17 +540,38 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
             console.log('[CharacterCreation] Success:', result);
             
             // Parse the result to get the new character's ID
-            const createdChar = parseMcpResponse<{ id?: string; characterId?: string }>(result, null);
+            const createdChar = parseMcpResponse<{ id?: string; characterId?: string } | null>(result, null);
             const newCharacterId = createdChar?.id || createdChar?.characterId;
             
-            // Sync state first to ensure the new character is in the store
-            await syncState(true);
-            
-            // Set the newly created character as active
             if (newCharacterId) {
+                // AUTO-ADD TO PARTY: If there's an active party, add the character to it
+                if (activePartyId) {
+                    try {
+                        console.log('[CharacterCreation] Adding to party:', activePartyId);
+                        await mcpManager.gameStateClient.callTool('add_party_member', {
+                            partyId: activePartyId,
+                            characterId: newCharacterId,
+                            role: 'member'
+                        });
+                        console.log('[CharacterCreation] Added to party successfully');
+                        
+                        // Sync party details to pick up the new member
+                        await syncPartyDetails(activePartyId);
+                    } catch (partyErr) {
+                        console.warn('[CharacterCreation] Failed to add to party:', partyErr);
+                        // Don't fail the whole creation if party add fails
+                    }
+                }
+                
+                // Set the active character ID and lock BEFORE syncing
                 console.log('[CharacterCreation] Setting active character:', newCharacterId);
                 setActiveCharacterId(newCharacterId, true);
-            } else {
+            }
+            
+            // Now sync state - it will see the lock and populate the character from party
+            await syncState(true);
+            
+            if (!newCharacterId) {
                 console.warn('[CharacterCreation] Could not extract character ID from result:', result);
             }
             

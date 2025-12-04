@@ -11,6 +11,8 @@ const QuickStats = () => {
     const world = useGameStateStore((state) => state.world);
     const activeWorldId = useGameStateStore((state) => state.activeWorldId);
     const setActiveWorldId = useGameStateStore((state) => state.setActiveWorldId);
+    // *** UNIFIED SOURCE OF TRUTH: Use gameStateStore for active character ***
+    const activeCharacterId = useGameStateStore((state) => state.activeCharacterId);
 
     // Party store state
     const activePartyId = usePartyStore((state) => state.activePartyId);
@@ -32,7 +34,8 @@ const QuickStats = () => {
     }, [isInitialized, activePartyId, partyDetails, syncPartyDetails]);
 
     const activeParty = activePartyId ? partyDetails[activePartyId] : null;
-    const activeChar = activeParty?.members?.find((m) => m.isActive);
+    // *** Use unified activeCharacterId instead of member.isActive ***
+    const activeChar = activeParty?.members?.find((m) => m.characterId === activeCharacterId);
 
     return (
         <>

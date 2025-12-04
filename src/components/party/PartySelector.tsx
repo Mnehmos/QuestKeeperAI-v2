@@ -21,6 +21,8 @@ export const PartySelector: React.FC<PartySelectorProps> = ({ onCreateParty, cla
 
   const setActiveCharacterId = useGameStateStore((state) => state.setActiveCharacterId);
   const syncGameState = useGameStateStore((state) => state.syncState);
+  // *** UNIFIED SOURCE OF TRUTH: Use gameStateStore for active character ***
+  const activeCharacterId = useGameStateStore((state) => state.activeCharacterId);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -44,7 +46,8 @@ export const PartySelector: React.FC<PartySelectorProps> = ({ onCreateParty, cla
     // Get the newly synced party details and sync the active character
     const newPartyDetails = usePartyStore.getState().partyDetails[partyId];
     if (newPartyDetails) {
-      const activeMember = newPartyDetails.members.find(m => m.isActive);
+      // Prefer the member marked as active in DB, fall back to first member
+      const activeMember = newPartyDetails.members.find(m => m.isActive) || newPartyDetails.members[0];
       if (activeMember) {
         console.log('[PartySelector] Syncing active character for new party:', activeMember.character.name);
         setActiveCharacterId(activeMember.characterId, true);
@@ -64,8 +67,8 @@ export const PartySelector: React.FC<PartySelectorProps> = ({ onCreateParty, cla
     }
   };
 
-  // Find the currently playing character name
-  const playingMember = activeParty?.members.find(m => m.isActive);
+  // *** Use unified activeCharacterId to find the playing character ***
+  const playingMember = activeParty?.members.find(m => m.characterId === activeCharacterId);
   const playingCharacterName = playingMember?.character.name;
 
   // Show loading state if not initialized or syncing
@@ -136,7 +139,8 @@ export const PartySelector: React.FC<PartySelectorProps> = ({ onCreateParty, cla
                 const details = partyDetails[party.id];
                 const count = details?.members?.length || 0;
                 const isActive = party.id === activePartyId;
-                const activeChar = details?.members.find(m => m.isActive);
+                // *** Use unified activeCharacterId to find the active character in each party ***
+                const activeChar = details?.members.find(m => m.characterId === activeCharacterId);
 
                 return (
                   <button

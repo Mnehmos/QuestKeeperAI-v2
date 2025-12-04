@@ -2,6 +2,8 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { mcpManager } from '../../services/mcpClient';
 import { useGameStateStore } from '../../stores/gameStateStore';
 import { parseMcpResponse } from '../../utils/mcpUtils';
+import { generateBackgroundStory } from '../../utils/aiBackgroundGenerator';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface CharacterCreationModalProps {
     isOpen: boolean;
@@ -154,8 +156,49 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     
+    // AI Background Generation state
+    const [isGeneratingBackground, setIsGeneratingBackground] = useState(false);
+    const [aiError, setAiError] = useState<string | null>(null);
+    
+    // Get current provider info for display
+    const selectedProvider = useSettingsStore((state) => state.selectedProvider);
+    const apiKeys = useSettingsStore((state) => state.apiKeys);
+    const hasApiKey = !!apiKeys[selectedProvider];
+    
     const syncState = useGameStateStore((state) => state.syncState);
     const setActiveCharacterId = useGameStateStore((state) => state.setActiveCharacterId);
+
+    // AI Background Generation handler
+    const handleGenerateBackground = useCallback(async () => {
+        if (!hasApiKey) {
+            setAiError(`No API key configured for ${selectedProvider}. Configure it in Settings.`);
+            return;
+        }
+        
+        setIsGeneratingBackground(true);
+        setAiError(null);
+        
+        try {
+            const raceData = RACES[race];
+            const classData = CLASSES[charClass];
+            
+            const generatedStory = await generateBackgroundStory({
+                name: name || 'Unknown Hero',
+                race: raceData.name,
+                characterClass: classData.name,
+                level,
+                existingBackground: background,
+                traits: raceData.traits ? [...raceData.traits] : undefined,
+            });
+            
+            setBackground(generatedStory.slice(0, 500)); // Enforce max length
+        } catch (err) {
+            console.error('[AI Background] Generation failed:', err);
+            setAiError((err as Error).message);
+        } finally {
+            setIsGeneratingBackground(false);
+        }
+    }, [name, race, charClass, level, background, hasApiKey, selectedProvider]);
 
     // Local random roll (4d6 drop lowest) - used as fallback or when MCP doesn't return dice details
     const rollLocalDice = useCallback(() => {
@@ -395,6 +438,7 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
         setAbilityMethod('roll');
         setStep('basics');
         setError(null);
+        setAiError(null);
     }, []);
 
     if (!isOpen) return null;
@@ -907,20 +951,57 @@ export const CharacterCreationModal: React.FC<CharacterCreationModalProps> = ({ 
                 </div>
             </div>
 
-            {/* Background Story */}
+            {/* Background Story with AI Enhance */}
             <div>
-                <label className="block text-sm font-bold text-terminal-green mb-2">
-                    BACKGROUND STORY <span className="text-xs font-normal text-terminal-green/60">(optional)</span>
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-bold text-terminal-green">
+                        BACKGROUND STORY <span className="text-xs font-normal text-terminal-green/60">(optional)</span>
+                    </label>
+                    <button
+                        onClick={handleGenerateBackground}
+                        disabled={isGeneratingBackground}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                            isGeneratingBackground 
+                                ? 'bg-purple-600/50 text-purple-200 cursor-wait'
+                                : hasApiKey
+                                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-500 hover:to-pink-500 shadow-[0_0_10px_rgba(168,85,247,0.3)] hover:shadow-[0_0_15px_rgba(168,85,247,0.5)]'
+                                    : 'bg-gray-600/50 text-gray-400 cursor-not-allowed'
+                        }`}
+                        title={hasApiKey ? `Generate using ${selectedProvider}` : 'Configure API key in Settings'}
+                    >
+                        {isGeneratingBackground ? (
+                            <>
+                                <span className="animate-spin">✨</span>
+                                Generating...
+                            </>
+                        ) : (
+                            <>
+                                ✨ AI Enhance
+                            </>
+                        )}
+                    </button>
+                </div>
+                
                 <textarea
                     value={background}
                     onChange={(e) => setBackground(e.target.value)}
-                    placeholder="Describe your character's history, motivations, and personality..."
+                    placeholder="Describe your character's history, motivations, and personality... or click 'AI Enhance' to generate one!"
                     className="w-full h-32 bg-black border border-terminal-green/50 text-terminal-green px-4 py-3 rounded-lg focus:outline-none focus:border-terminal-green-bright resize-none"
                     maxLength={500}
+                    disabled={isGeneratingBackground}
                 />
-                <div className="text-xs text-terminal-green/50 text-right mt-1">
-                    {background.length}/500
+                <div className="flex justify-between items-center mt-1">
+                    <div>
+                        {aiError && (
+                            <p className="text-red-400 text-xs">{aiError}</p>
+                        )}
+                        {!hasApiKey && !aiError && (
+                            <p className="text-amber-400/60 text-xs">Configure API key in Settings to enable AI generation</p>
+                        )}
+                    </div>
+                    <span className="text-xs text-terminal-green/50">
+                        {background.length}/500
+                    </span>
                 </div>
             </div>
 

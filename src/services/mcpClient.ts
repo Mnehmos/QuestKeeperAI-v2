@@ -137,6 +137,15 @@ export class McpClient {
             this.messageBuffer = this.messageBuffer.substring(newlineIndex + 1);
             
             if (jsonLine) {
+                // Skip non-JSON log lines (MCP protocol requires only JSON-RPC on stdout)
+                if (!jsonLine.startsWith('{')) {
+                    // Log server output that leaked to stdout
+                    if (jsonLine.startsWith('[')) {
+                        console.log(`[McpClient] ${this.serverName}:`, jsonLine);
+                    }
+                    continue;
+                }
+                
                 try {
                     const response = JSON.parse(jsonLine) as JsonRpcResponse;
                     

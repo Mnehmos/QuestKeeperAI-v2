@@ -3,6 +3,8 @@
  * Now also supports returning structured data for rich visualizations
  */
 
+import { useCombatStore } from '../stores/combatStore';
+
 // Visualization type indicators for components
 export type VisualizationType =
     | 'world'
@@ -20,6 +22,42 @@ export interface FormattedResponse {
         type: VisualizationType;
         data: any;
     };
+}
+
+
+/**
+ * Process pre-formatted combat response text:
+ * - Extract embedded STATE_JSON and update combat store
+ * - Strip STATE_JSON block from display text
+ */
+function processFormattedCombatResponse(text: string): string {
+    console.log('[processFormattedCombatResponse] Called with text length:', text.length);
+    
+    // Extract STATE_JSON if present
+    const stateJsonMatch = text.match(/<!-- STATE_JSON\n([\s\S]*?)\nSTATE_JSON -->/);
+    
+    if (stateJsonMatch && stateJsonMatch[1]) {
+        console.log('[processFormattedCombatResponse] Found STATE_JSON block');
+        try {
+            const stateJson = JSON.parse(stateJsonMatch[1]);
+            console.log('[processFormattedCombatResponse] Parsed STATE_JSON:', {
+                encounterId: stateJson.encounterId,
+                participantCount: stateJson.participants?.length,
+                participants: stateJson.participants?.map((p: any) => ({ name: p.name, id: p.id, hp: p.hp }))
+            });
+            
+            // Update combat store with the state
+            useCombatStore.getState().updateFromStateJson(stateJson);
+            console.log('[processFormattedCombatResponse] Called updateFromStateJson');
+        } catch (e) {
+            console.warn('[processFormattedCombatResponse] Failed to parse STATE_JSON:', e);
+        }
+    } else {
+        console.log('[processFormattedCombatResponse] No STATE_JSON block found');
+    }
+    
+    // Strip the STATE_JSON block from display
+    return text.replace(/\n*<!-- STATE_JSON[\s\S]*?STATE_JSON -->\n*/g, '').trim();
 }
 
 interface Character {
@@ -782,9 +820,19 @@ export function formatToolResponseWithVisualization(toolName: string, response: 
         const data = typeof response === 'string' ? JSON.parse(response) : response;
 
         // Extract from MCP wrapper if present
-        const actualData = data.content?.[0]?.text
-            ? JSON.parse(data.content[0].text)
-            : data;
+        let actualData = data;
+        if (data.content?.[0]?.text) {
+            const textContent = data.content[0].text;
+            // Try to parse as JSON, but if it fails, treat as pre-formatted text
+            try {
+                actualData = JSON.parse(textContent);
+            } catch {
+                // Text is already formatted (e.g., combat responses with emojis)
+                // Process any embedded STATE_JSON and strip it from display
+                const cleanedText = processFormattedCombatResponse(textContent);
+                return { markdown: cleanedText };
+            }
+        }
 
         // World tools - return rich visualization data
         if (toolName === 'list_worlds' || actualData.worlds) {
@@ -833,9 +881,18 @@ export function formatToolResponse(toolName: string, response: any): string {
         const data = typeof response === 'string' ? JSON.parse(response) : response;
         
         // Extract from MCP wrapper if present
-        const actualData = data.content?.[0]?.text 
-            ? JSON.parse(data.content[0].text)
-            : data;
+        let actualData = data;
+        if (data.content?.[0]?.text) {
+            const textContent = data.content[0].text;
+            // Try to parse as JSON, but if it fails, treat as pre-formatted text
+            try {
+                actualData = JSON.parse(textContent);
+            } catch {
+                // Text is already formatted (e.g., combat responses with emojis)
+                // Process any embedded STATE_JSON and strip it from display
+                return processFormattedCombatResponse(textContent);
+            }
+        }
 
         // Detect and format based on tool name or data structure
         if (toolName === 'list_characters' || actualData.characters) {
@@ -1257,4 +1314,294 @@ function getSecretTypeIcon(type: string): string {
         custom: '✨',
     };
     return icons[type?.toLowerCase()] || '🔒';
+}
+
+// ============================================================================
+// COMBAT TOOL FORMATTERS - Rich output for LLM action guidance
+// These formatters provide clear, actionable context to help the LLM
+// understand combat state and what actions to take next.
+// ============================================================================
+
+/**
+ * Format create_encounter response with clear next steps
+ */
+export function formatCreateEncounter(data: any): string {
+    const encounterId = data.encounterId || data.encounter?.id;
+    const participants = data.participants || data.encounter?.participants || [];
+
+    let output = `⚔️ COMBAT ENCOUNTER STARTED!\n`;
+    output += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    output += `Encounter ID: ${encounterId}\n\n`;
+
+    if (participants.length > 0) {
+        output += `📋 INITIATIVE ORDER:\n`;
+        const sorted = [...participants].sort((a: any, b: any) => (b.initiative || 0) - (a.initiative || 0));
+        sorted.forEach((p: any, i: number) => {
+            const hpStatus = p.hp <= 0 ? '💀' : p.hp < (p.maxHp || p.hp) / 2 ? '🩹' : '💚';
+            const turnMarker = i === 0 ? '👉 ' : '   ';
+            output += `${turnMarker}${i + 1}. ${p.name} ${hpStatus} (Init: ${p.initiative || 0}, HP: ${p.hp}/${p.maxHp || p.hp})\n`;
+        });
+        output += `\n`;
+    }
+
+    output += `⚡ NEXT STEP: Check whose turn it is using get_encounter_state, then:\n`;
+    output += `   - If enemy turn: Use execute_combat_action then advance_turn\n`;
+    output += `   - If player turn: Present options and wait for input\n`;
+
+    return output;
+}
+
+/**
+ * Format get_encounter_state response with clear turn indicator
+ */
+export function formatGetEncounterState(data: any): string {
+    const round = data.round || 1;
+    const currentTurn = data.currentTurn || {};
+    const participants = data.participants || [];
+    const currentIndex = data.currentTurnIndex ?? 0;
+
+    // Find current participant
+    const currentParticipant = participants[currentIndex] ||
+        participants.find((p: any) => p.id === currentTurn.participantId) ||
+        participants[0];
+
+    const isEnemy = currentParticipant?.isEnemy ??
+        currentParticipant?.type === 'enemy' ??
+        !currentParticipant?.name?.toLowerCase().includes('player');
+
+    let output = `⚔️ COMBAT STATUS - ROUND ${round}\n`;
+    output += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    // Current turn indicator - very prominent
+    if (currentParticipant) {
+        const icon = isEnemy ? '👹' : '🧙';
+        output += `${icon} CURRENT TURN: ${currentParticipant.name?.toUpperCase()}\n`;
+        output += `   HP: ${currentParticipant.hp}/${currentParticipant.maxHp || currentParticipant.hp}`;
+        if (currentParticipant.ac) output += ` | AC: ${currentParticipant.ac}`;
+        output += `\n\n`;
+    }
+
+    // Initiative order
+    output += `📋 INITIATIVE ORDER:\n`;
+    participants.forEach((p: any, i: number) => {
+        const isCurrent = i === currentIndex || p.id === currentTurn.participantId;
+        const hpStatus = p.hp <= 0 ? '💀 DEAD' : p.hp < (p.maxHp || p.hp) / 2 ? '🩹 Wounded' : '💚';
+        const marker = isCurrent ? '👉 ' : '   ';
+        const enemyTag = (p.isEnemy || p.type === 'enemy') ? '[ENEMY]' : '[ALLY]';
+        output += `${marker}${i + 1}. ${p.name} ${hpStatus} ${enemyTag}\n`;
+    });
+    output += `\n`;
+
+    // Clear action guidance
+    if (isEnemy && currentParticipant) {
+        output += `⚡ ACTION REQUIRED: This is an ENEMY turn!\n`;
+        output += `   1. Narrate ${currentParticipant.name}'s action dramatically\n`;
+        output += `   2. Call execute_combat_action (attack/ability/move)\n`;
+        output += `   3. Call advance_turn to proceed\n`;
+        output += `   DO NOT ask permission - execute the enemy action NOW!\n`;
+    } else {
+        output += `⏳ PLAYER TURN: Present options and wait for player input.\n`;
+        output += `   After player chooses: execute_combat_action then advance_turn\n`;
+    }
+
+    return output;
+}
+
+/**
+ * Format execute_combat_action response with damage results
+ */
+export function formatExecuteCombatAction(data: any): string {
+    let output = `\n`;
+
+    // Determine action type and result
+    const actionType = data.actionType || data.action?.type || 'action';
+    const success = data.success ?? data.hit ?? true;
+    const damage = data.damage ?? data.totalDamage ?? 0;
+    const targetName = data.targetName || data.target?.name || 'target';
+    const attackerName = data.attackerName || data.attacker?.name || 'attacker';
+
+    if (actionType === 'attack' || data.hit !== undefined) {
+        if (success || data.hit) {
+            output += `🎯 HIT! ${attackerName} strikes ${targetName}!\n`;
+            if (damage > 0) {
+                output += `💥 DAMAGE: ${damage} points\n`;
+            }
+        } else {
+            output += `❌ MISS! ${attackerName}'s attack fails to connect.\n`;
+        }
+    } else if (actionType === 'heal' || data.healing) {
+        const healing = data.healing || damage;
+        output += `✨ HEALED! ${targetName} recovers ${healing} HP!\n`;
+    } else if (actionType === 'ability' || actionType === 'spell') {
+        output += `🔮 ${attackerName} uses ${data.abilityName || 'an ability'}!\n`;
+        if (data.effect) output += `   Effect: ${data.effect}\n`;
+    } else {
+        output += `✅ Action completed: ${data.message || actionType}\n`;
+    }
+
+    // Show updated HP if available
+    if (data.target?.hp !== undefined || data.targetHp !== undefined) {
+        const hp = data.target?.hp ?? data.targetHp;
+        const maxHp = data.target?.maxHp ?? data.targetMaxHp ?? hp;
+        const hpPercent = Math.round((hp / maxHp) * 100);
+        output += `   ${targetName} HP: ${hp}/${maxHp} (${hpPercent}%)\n`;
+
+        if (hp <= 0) {
+            output += `💀 ${targetName} is DEFEATED!\n`;
+        }
+    }
+
+    output += `\n⚡ NEXT: Call advance_turn to proceed to next combatant.\n`;
+
+    return output;
+}
+
+/**
+ * Format advance_turn response with next turn guidance
+ */
+export function formatAdvanceTurn(data: any): string {
+    const nextParticipant = data.nextParticipant || data.currentParticipant || {};
+    const nextName = nextParticipant.name || data.nextParticipantName || 'Unknown';
+    const isEnemy = nextParticipant.isEnemy ?? nextParticipant.type === 'enemy' ?? false;
+    const round = data.round || data.currentRound || 1;
+    const newRound = data.newRound || data.roundAdvanced || false;
+
+    let output = `\n`;
+
+    if (newRound) {
+        output += `🔄 ═══ ROUND ${round} BEGINS ═══\n\n`;
+    }
+
+    const icon = isEnemy ? '👹' : '🧙';
+    output += `${icon} TURN ADVANCED → ${nextName.toUpperCase()}\n`;
+
+    if (nextParticipant.hp !== undefined) {
+        output += `   HP: ${nextParticipant.hp}/${nextParticipant.maxHp || nextParticipant.hp}`;
+        if (nextParticipant.ac) output += ` | AC: ${nextParticipant.ac}`;
+        output += `\n`;
+    }
+
+    output += `\n`;
+
+    if (isEnemy) {
+        output += `⚡ ENEMY TURN - ACT NOW!\n`;
+        output += `   1. Roleplay ${nextName}'s action with dramatic narration\n`;
+        output += `   2. Call execute_combat_action\n`;
+        output += `   3. Call advance_turn\n`;
+        output += `   DO NOT wait for permission!\n`;
+    } else {
+        output += `⏳ PLAYER TURN\n`;
+        output += `   Present options to the player and wait for their decision.\n`;
+    }
+
+    return output;
+}
+
+/**
+ * Format end_encounter response
+ */
+export function formatEndEncounter(data: any): string {
+    let output = `\n`;
+    output += `⚔️ ═══ COMBAT ENDED ═══\n`;
+    output += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    if (data.victory || data.outcome === 'victory') {
+        output += `🏆 VICTORY!\n`;
+    } else if (data.defeat || data.outcome === 'defeat') {
+        output += `💀 DEFEAT...\n`;
+    } else if (data.fled || data.outcome === 'fled') {
+        output += `🏃 FLED FROM BATTLE\n`;
+    } else {
+        output += `✅ Combat concluded.\n`;
+    }
+
+    if (data.xpAwarded || data.experienceGained) {
+        output += `\n🌟 Experience gained: ${data.xpAwarded || data.experienceGained} XP\n`;
+    }
+
+    if (data.loot && data.loot.length > 0) {
+        output += `\n📦 Loot found:\n`;
+        data.loot.forEach((item: any) => {
+            output += `   - ${item.name || item}\n`;
+        });
+    }
+
+    output += `\n🎭 Continue narrating the aftermath.\n`;
+
+    return output;
+}
+
+/**
+ * Format combat tool responses for LLM consumption
+ * Returns formatted string for combat tools, null for non-combat tools
+ *
+ * IMPORTANT: If the MCP server already returns rich formatted text,
+ * we pass it through directly. We only apply frontend formatting if
+ * the response is raw JSON data.
+ */
+export function formatCombatToolResponse(toolName: string, response: any): string | null {
+    try {
+        // Parse response if string
+        const data = typeof response === 'string' ? JSON.parse(response) : response;
+
+        // Check if this is an MCP response wrapper with text content
+        if (data.content?.[0]?.type === 'text' && data.content[0].text) {
+            const textContent = data.content[0].text;
+
+            // If the MCP server already returned formatted text (contains emoji/formatting),
+            // pass it through directly - don't try to reformat it
+            if (textContent.includes('═══') || textContent.includes('⚔️') ||
+                textContent.includes('COMBAT') || textContent.includes('TURN')) {
+                return textContent;
+            }
+
+            // Try to parse as JSON for further processing
+            try {
+                const innerData = JSON.parse(textContent);
+                // Continue with formatting below using innerData
+                return formatCombatData(toolName, innerData);
+            } catch {
+                // Not JSON, but also not our formatted text - return as-is
+                return textContent;
+            }
+        }
+
+        // Direct data (not in MCP wrapper)
+        return formatCombatData(toolName, data);
+
+    } catch (e) {
+        console.warn('[formatCombatToolResponse] Failed to format:', e);
+        return null;
+    }
+}
+
+/**
+ * Internal helper to format combat data
+ */
+function formatCombatData(toolName: string, data: any): string | null {
+    // Match tool names (handle both snake_case and various naming conventions)
+    const normalizedName = toolName.toLowerCase().replace(/-/g, '_');
+
+    if (normalizedName === 'create_encounter' || normalizedName === 'start_combat') {
+        return formatCreateEncounter(data);
+    }
+
+    if (normalizedName === 'get_encounter_state' || normalizedName === 'get_combat_state') {
+        return formatGetEncounterState(data);
+    }
+
+    if (normalizedName === 'execute_combat_action' || normalizedName === 'combat_action') {
+        return formatExecuteCombatAction(data);
+    }
+
+    if (normalizedName === 'advance_turn' || normalizedName === 'next_turn') {
+        return formatAdvanceTurn(data);
+    }
+
+    if (normalizedName === 'end_encounter' || normalizedName === 'end_combat') {
+        return formatEndEncounter(data);
+    }
+
+    // Not a combat tool
+    return null;
 }

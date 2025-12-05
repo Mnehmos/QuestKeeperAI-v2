@@ -101,7 +101,7 @@ export class OpenAIProvider implements LLMProviderInterface {
         tools: any[] | undefined,
         onChunk: (content: string) => void,
         onToolCalls: (toolCalls: any[]) => void, // Changed to batch callback
-        onComplete: () => void,
+        onComplete: () => void | Promise<void>,
         onError: (error: string) => void
     ): Promise<void> {
         const headers: Record<string, string> = {
@@ -168,7 +168,7 @@ export class OpenAIProvider implements LLMProviderInterface {
                     
                     if (done) {
                         console.log(`[${this.provider}] Stream completed`);
-                        onComplete();
+                        await onComplete();
                         break;
                     }
 

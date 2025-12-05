@@ -80,7 +80,7 @@ export class GeminiProvider implements LLMProviderInterface {
         tools: any[] | undefined,
         onChunk: (content: string) => void,
         onToolCall: (toolCall: any) => void,
-        onComplete: () => void,
+        onComplete: () => void | Promise<void>,
         onError: (error: string) => void
     ): Promise<void> {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
@@ -133,7 +133,7 @@ export class GeminiProvider implements LLMProviderInterface {
                 const { done, value } = await reader.read();
                 if (done) {
                     console.log('[Gemini] Stream completed');
-                    onComplete();
+                    await onComplete();
                     break;
                 }
 

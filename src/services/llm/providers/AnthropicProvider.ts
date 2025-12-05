@@ -113,7 +113,7 @@ export class AnthropicProvider implements LLMProviderInterface {
         tools: any[] | undefined,
         onChunk: (content: string) => void,
         onToolCalls: (toolCalls: any[]) => void, // Changed to batch callback
-        onComplete: () => void,
+        onComplete: () => void | Promise<void>,
         onError: (error: string) => void
     ): Promise<void> {
         const headers: Record<string, string> = {
@@ -216,8 +216,9 @@ export class AnthropicProvider implements LLMProviderInterface {
                             onToolCalls(completedToolCalls);
                         } else {
                             console.log(`[Anthropic] Stream completed (no tool calls)`);
-                            onComplete();
                         }
+                        // FIX: Always call onComplete to resolve the promise in LLMService
+                        await onComplete();
                         break;
                     }
 
@@ -276,7 +277,9 @@ export class AnthropicProvider implements LLMProviderInterface {
                                     if (completedToolCalls.length > 0) {
                                         console.log(`[Anthropic] Message stopped, emitting ${completedToolCalls.length} tool call(s) as batch`);
                                         onToolCalls(completedToolCalls);
-                                        return; // Exit early since onToolCalls will handle completion
+                                        // FIX: Must call onComplete to resolve the promise, don't just return
+                                        await onComplete();
+                                        return;
                                     }
                                     break;
                                 

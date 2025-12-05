@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { CreatureSize } from '../utils/gridHelpers';
 import { mcpManager } from '../services/mcpClient';
+import { useGameStateStore } from './gameStateStore';
 import { parseMcpResponse, debounce } from '../utils/mcpUtils';
 
 export type Vector3 = { x: number; y: number; z: number };
@@ -35,6 +36,7 @@ export interface Entity {
   color: string;
   model?: string;
   metadata: EntityMetadata;
+  isCurrentTurn?: boolean;
 }
 
 export interface GridConfig {
@@ -50,6 +52,32 @@ export interface TerrainFeature {
   blocksMovement: boolean;
   coverType?: 'half' | 'three-quarters' | 'full' | 'none';
   color: string;
+}
+
+/**
+ * Structure returned by get_encounter_state (now returns JSON!)
+ */
+interface EncounterStateJson {
+  encounterId: string;
+  round: number;
+  currentTurnIndex: number;
+  currentTurn: {
+    id: string;
+    name: string;
+    isEnemy: boolean;
+  } | null;
+  turnOrder: string[];
+  participants: Array<{
+    id: string;
+    name: string;
+    hp: number;
+    maxHp: number;
+    initiative: number;
+    isEnemy: boolean;
+    conditions: string[];
+    isDefeated: boolean;
+    isCurrentTurn: boolean;
+  }>;
 }
 
 interface CombatState {
@@ -78,69 +106,59 @@ interface CombatState {
   setBattlefieldDescription: (desc: string | null) => void;
   setActiveEncounterId: (id: string | null) => void;
   syncCombatState: () => Promise<void>;
+  updateFromStateJson: (stateJson: EncounterStateJson) => void;
   clearCombat: () => void;
 }
 
 const MOCK_ENTITIES: Entity[] = [];
 
-// Monster name patterns for entity type detection
-const MONSTER_PATTERNS = [
-  'goblin', 'orc', 'dragon', 'skeleton', 'zombie', 'wolf', 'bandit',
-  'troll', 'giant', 'demon', 'devil', 'undead', 'beast', 'spider',
-  'kobold', 'gnoll', 'ogre', 'vampire', 'werewolf', 'lich', 'elemental'
-];
-
 /**
- * Determine entity type and color based on name and position in turn order
+ * Extract embedded JSON from tool response text
+ * Looks for <!-- STATE_JSON ... STATE_JSON --> markers
  */
-function determineEntityType(name: string, index: number): { type: 'character' | 'npc' | 'monster'; color: string } {
-  const lowerName = name.toLowerCase();
-  
-  // Check for monster patterns
-  for (const pattern of MONSTER_PATTERNS) {
-    if (lowerName.includes(pattern)) {
-      return { type: 'monster', color: '#ff4444' }; // Red for monsters
+function extractEmbeddedStateJson(text: string): EncounterStateJson | null {
+  const match = text.match(/<!-- STATE_JSON\n([\s\S]*?)\nSTATE_JSON -->/);
+  if (match && match[1]) {
+    try {
+      return JSON.parse(match[1]);
+    } catch (e) {
+      console.warn('[extractEmbeddedStateJson] Failed to parse embedded JSON:', e);
+      return null;
     }
   }
-  
-  // First participant is usually the player character
-  if (index === 0) {
-    return { type: 'character', color: '#44ff44' }; // Green for player
-  }
-  
-  // Others default to NPC (could be allies)
-  return { type: 'npc', color: '#ffaa44' }; // Orange for NPCs
+  return null;
 }
 
 /**
- * Parse rpg-mcp encounter state into entities
+ * Determine entity type and color based on isEnemy flag and name
  */
-function parseEncounterState(data: any, gridConfig: GridConfig): { 
-  entities: Entity[]; 
-  currentRound: number;
-  currentTurnName: string | null;
-  turnOrder: string[];
-} {
-  const entities: Entity[] = [];
-  
-  if (!data || !data.participants) {
-    return { entities, currentRound: 0, currentTurnName: null, turnOrder: [] };
+function determineEntityType(_name: string, isEnemy: boolean, isCurrentTurn: boolean): { type: 'character' | 'npc' | 'monster'; color: string } {
+  if (isEnemy) {
+    return { type: 'monster', color: isCurrentTurn ? '#ff6666' : '#ff4444' }; // Red for monsters
   }
+  
+  // First non-enemy is usually the player character
+  return { type: 'character', color: isCurrentTurn ? '#66ff66' : '#44ff44' }; // Green for players
+}
 
-  const participants = data.participants;
-  const participantCount = participants.length;
+/**
+ * Convert EncounterStateJson to Entity array for the battlemap
+ */
+function stateJsonToEntities(data: EncounterStateJson, gridConfig: GridConfig): Entity[] {
+  const entities: Entity[] = [];
+  const participantCount = data.participants.length;
   
   // Position participants in a circle around the center
   const radius = Math.min(gridConfig.size / 4, 6);
   
-  participants.forEach((p: any, index: number) => {
+  data.participants.forEach((p, index) => {
     // Calculate position in a circle
     const angle = (2 * Math.PI * index) / participantCount - Math.PI / 2; // Start from top
     
     const x = Math.round(Math.cos(angle) * radius);
     const z = Math.round(Math.sin(angle) * radius);
     
-    const { type, color } = determineEntityType(p.name || '', index);
+    const { type, color } = determineEntityType(p.name, p.isEnemy, p.isCurrentTurn);
 
     const entity: Entity = {
       id: p.id,
@@ -150,57 +168,49 @@ function parseEncounterState(data: any, gridConfig: GridConfig): {
       position: { x, y: 0, z },
       color,
       model: 'box',
+      isCurrentTurn: p.isCurrentTurn,
       metadata: {
         hp: {
-          current: p.hp || 0,
-          max: p.maxHp || p.hp || 0
+          current: p.hp,
+          max: p.maxHp
         },
-        ac: p.ac || 10,
+        ac: 10, // Default AC
         creatureType: type,
-        conditions: p.conditions || []
+        conditions: p.conditions
       }
     };
     
     entities.push(entity);
   });
 
-  return {
-    entities,
-    currentRound: data.round || 1,
-    currentTurnName: data.currentTurn?.participantName || data.currentTurn?.name || null,
-    turnOrder: data.turnOrder || []
-  };
+  return entities;
 }
 
 /**
- * Generate battlefield description from parsed state
+ * Generate battlefield description from state JSON
  */
-function generateBattlefieldDescription(
-  entities: Entity[], 
-  round: number, 
-  currentTurn: string | null,
-  turnOrder: string[]
-): string {
-  if (entities.length === 0) {
+function generateBattlefieldDescription(data: EncounterStateJson): string {
+  if (!data.participants || data.participants.length === 0) {
     return 'No active combat encounter.';
   }
 
   const lines = [
-    `⚔️ Combat Round ${round}`,
-    `🎯 Current Turn: ${currentTurn || 'Unknown'}`,
-    `📋 Initiative: ${turnOrder.join(' → ')}`,
+    `⚔️ Combat Round ${data.round}`,
+    `🎯 Current Turn: ${data.currentTurn?.name || 'Unknown'}`,
+    `📋 Initiative: ${data.turnOrder.join(' → ')}`,
     '',
     '👥 Combatants:'
   ];
   
-  entities.forEach(e => {
-    const hpPercent = Math.round((e.metadata.hp.current / e.metadata.hp.max) * 100);
-    const hpBar = hpPercent > 66 ? '🟢' : hpPercent > 33 ? '🟡' : '🔴';
-    const conditions = e.metadata.conditions.length > 0 
-      ? ` [${e.metadata.conditions.join(', ')}]` 
+  data.participants.forEach(p => {
+    const hpPercent = p.maxHp > 0 ? Math.round((p.hp / p.maxHp) * 100) : 0;
+    const hpBar = p.isDefeated ? '💀' : hpPercent > 66 ? '🟢' : hpPercent > 33 ? '🟡' : '🔴';
+    const conditions = p.conditions.length > 0 
+      ? ` [${p.conditions.join(', ')}]` 
       : '';
+    const turnMarker = p.isCurrentTurn ? '▶ ' : '  ';
     
-    lines.push(`  ${hpBar} ${e.name}: ${e.metadata.hp.current}/${e.metadata.hp.max} HP${conditions}`);
+    lines.push(`${turnMarker}${hpBar} ${p.name}: ${p.hp}/${p.maxHp} HP${conditions}`);
   });
 
   return lines.join('\n');
@@ -275,8 +285,65 @@ export const useCombatStore = create<CombatState>((set, get) => ({
     selectedEntityId: null
   }),
 
+  /**
+   * Update store from a state JSON object
+   * Can be called when parsing tool responses with embedded state
+   */
+  updateFromStateJson: (stateJson: EncounterStateJson) => {
+    const { gridConfig } = get();
+    
+    const entities = stateJsonToEntities(stateJson, gridConfig);
+    const description = generateBattlefieldDescription(stateJson);
+    
+    set({
+      entities,
+      activeEncounterId: stateJson.encounterId,
+      currentRound: stateJson.round,
+      currentTurnName: stateJson.currentTurn?.name || null,
+      turnOrder: stateJson.turnOrder,
+      battlefieldDescription: description
+    });
+    
+    console.log('[updateFromStateJson] Updated combat state:', {
+      encounterId: stateJson.encounterId,
+      round: stateJson.round,
+      entityCount: entities.length,
+      currentTurn: stateJson.currentTurn?.name
+    });
+    
+    // Sync HP changes back to game state store for party panel
+    const gameState = useGameStateStore.getState();
+    console.log('[updateFromStateJson] Party state:', gameState.party.map(c => ({ name: c.name, id: c.id, hp: c.hp?.current })));
+    console.log('[updateFromStateJson] Combat participants:', stateJson.participants.map(p => ({ name: p.name, id: p.id, hp: p.hp })));
+    
+    const updatedParty = gameState.party.map(char => {
+      // Find matching participant by name or ID
+      const participant = stateJson.participants.find(
+        p => p.name === char.name || p.id === char.id
+      );
+      if (participant && participant.hp !== char.hp.current) {
+        console.log('[updateFromStateJson] Syncing HP for', char.name, ':', char.hp.current, '->', participant.hp);
+        return { ...char, hp: { ...char.hp, current: participant.hp } };
+      }
+      return char;
+    });
+    
+    // Only update if there were changes
+    if (updatedParty.some((char, i) => char.hp.current !== gameState.party[i]?.hp.current)) {
+      useGameStateStore.setState({ party: updatedParty });
+      // Also update active character if it was affected
+      const activeId = gameState.activeCharacterId;
+      if (activeId) {
+        const updatedActive = updatedParty.find(c => c.id === activeId);
+        if (updatedActive) {
+          useGameStateStore.setState({ activeCharacter: updatedActive });
+        }
+      }
+    }
+  },
+
   syncCombatState: async () => {
-    const { activeEncounterId, gridConfig, isSyncing, lastSyncTime } = get();
+    const { activeEncounterId, isSyncing, lastSyncTime } = get();
     
     // Prevent concurrent syncs and rate limit
     if (isSyncing) {
@@ -305,33 +372,24 @@ export const useCombatStore = create<CombatState>((set, get) => ({
 
       console.log('[syncCombatState] Raw result:', result);
 
-      // Parse using utility - handles both MCP wrapper and direct JSON
-      const data = parseMcpResponse<any>(result, null);
+      // NEW: get_encounter_state now returns JSON directly!
+      const data = parseMcpResponse<EncounterStateJson | null>(result, null);
       
-      if (data) {
+      if (data && data.participants) {
         console.log('[syncCombatState] Parsed encounter data:', data);
         
-        const parsed = parseEncounterState(data, gridConfig);
-        
-        console.log('[syncCombatState] Generated', parsed.entities.length, 'entities');
-        console.log('[syncCombatState] Round:', parsed.currentRound, 'Turn:', parsed.currentTurnName);
-        
-        const description = generateBattlefieldDescription(
-          parsed.entities,
-          parsed.currentRound,
-          parsed.currentTurnName,
-          parsed.turnOrder
-        );
-        
-        set({
-          entities: parsed.entities,
-          currentRound: parsed.currentRound,
-          currentTurnName: parsed.currentTurnName,
-          turnOrder: parsed.turnOrder,
-          battlefieldDescription: description
-        });
+        // Use the new updateFromStateJson method
+        get().updateFromStateJson(data);
+      } else if (typeof data === 'string') {
+        // Fallback: check if it's text with embedded JSON
+        const embedded = extractEmbeddedStateJson(data);
+        if (embedded) {
+          get().updateFromStateJson(embedded);
+        } else {
+          console.warn('[syncCombatState] Response is text without embedded JSON');
+        }
       } else {
-        console.warn('[syncCombatState] No data in response');
+        console.warn('[syncCombatState] No valid data in response');
       }
     } catch (e: any) {
       const errorMsg = e?.message || String(e);
@@ -360,3 +418,14 @@ export const useCombatStore = create<CombatState>((set, get) => ({
 export const debouncedSyncCombatState = debounce(() => {
   useCombatStore.getState().syncCombatState();
 }, 500);
+
+/**
+ * Helper to parse combat tool responses and update store
+ * Call this after receiving any combat tool response
+ */
+export function handleCombatToolResponse(responseText: string): void {
+  const embedded = extractEmbeddedStateJson(responseText);
+  if (embedded) {
+    useCombatStore.getState().updateFromStateJson(embedded);
+  }
+}

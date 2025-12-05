@@ -5,6 +5,7 @@ import { AnthropicProvider } from './providers/AnthropicProvider';
 import { GeminiProvider } from './providers/GeminiProvider';
 import { ChatMessage, LLMProviderInterface, LLMResponse } from './types';
 import { parseMcpResponse, executeBatchToolCalls, BatchToolCall } from '../../utils/mcpUtils';
+import { formatCombatToolResponse } from '../../utils/toolResponseFormatter';
 
 // Combat tools from rpg-mcp that should trigger combat state sync
 const COMBAT_TOOLS = new Set([
@@ -154,17 +155,50 @@ class LLMService {
         if (toolName === 'create_encounter') {
             try {
                 const { useCombatStore } = await import('../../stores/combatStore');
+
+                // Try to extract encounter ID from formatted text or JSON
+                let encounterId: string | null = null;
+
+                // First try JSON parsing
                 const data = parseMcpResponse<any>(result, null);
-                
                 if (data?.encounterId) {
-                    console.log(`[LLMService] Setting active encounter ID: ${data.encounterId}`);
-                    useCombatStore.getState().setActiveEncounterId(data.encounterId);
+                    encounterId = data.encounterId;
+                }
+
+                // If no JSON encounterId, try to extract from formatted text
+                if (!encounterId) {
+                    const textContent = result?.content?.[0]?.text || (typeof result === 'string' ? result : '');
+                    // Match "Encounter ID: encounter-xxx-yyy" or "Encounter: encounter-xxx" patterns
+                    const match = textContent.match(/Encounter(?:\s*ID)?:\s*(encounter-[^\s\n]+)/i);
+                    if (match) {
+                        encounterId = match[1];
+                    }
+                    
+                    // Also try extracting from embedded JSON
+                    if (!encounterId) {
+                        const jsonMatch = textContent.match(/<!-- STATE_JSON\n([\s\S]*?)\nSTATE_JSON -->/);
+                        if (jsonMatch && jsonMatch[1]) {
+                            try {
+                                const stateJson = JSON.parse(jsonMatch[1]);
+                                if (stateJson.encounterId) {
+                                    encounterId = stateJson.encounterId;
+                                }
+                            } catch { /* ignore parse errors */ }
+                        }
+                    }
+                }
+
+                if (encounterId) {
+                    console.log(`[LLMService] Setting active encounter ID: ${encounterId}`);
+                    useCombatStore.getState().setActiveEncounterId(encounterId);
+                } else {
+                    console.warn('[LLMService] Could not find encounter ID in create_encounter result');
                 }
             } catch (e) {
                 console.warn('[LLMService] Failed to parse create_encounter result:', e);
             }
         }
-        
+
         if (toolName === 'end_encounter') {
             try {
                 const { useCombatStore } = await import('../../stores/combatStore');
@@ -229,9 +263,15 @@ class LLMService {
                     await this.parseToolResult(toolCall.name, result);
                 }
 
+                // Format combat tool responses with rich actionable guidance
+                // This helps the LLM understand what to do next during combat
+                const formattedResult = toolCall.name
+                    ? formatCombatToolResponse(toolCall.name, result)
+                    : null;
+
                 currentHistory.push({
                     role: 'tool',
-                    content: JSON.stringify(result),
+                    content: formattedResult || JSON.stringify(result),
                     toolCallId
                 } as any);
             }
@@ -280,6 +320,9 @@ class LLMService {
             while (continueLoop && turnCount < MAX_TOOL_TURNS) {
                 continueLoop = false; // Will be set to true if tool calls are received
 
+                // FIX: Track async tool handling so we can await it before resolving
+                let toolHandlingPromise: Promise<void> | null = null;
+
                 await new Promise<void>((resolve, reject) => {
                     (provider as any).streamMessage(
                         currentHistory,
@@ -288,70 +331,89 @@ class LLMService {
                         allTools,
                         callbacks.onChunk,
                         // Handle ALL tool calls as a batch
-                        async (toolCalls: any[]) => {
-                            turnCount++;
-                            console.log(`[LLMService] Turn ${turnCount}: Received ${toolCalls.length} tool call(s)`);
+                        (toolCalls: any[]) => {
+                            // Store the async work as a promise - don't use async callback directly
+                            // because the provider doesn't await it
+                            toolHandlingPromise = (async () => {
+                                turnCount++;
+                                console.log(`[LLMService] Turn ${turnCount}: Received ${toolCalls.length} tool call(s)`);
 
-                            if (turnCount >= MAX_TOOL_TURNS) {
-                                console.warn(`[LLMService] Max tool turns (${MAX_TOOL_TURNS}) reached, stopping tool execution`);
-                                return;
-                            }
+                                if (turnCount >= MAX_TOOL_TURNS) {
+                                    console.warn(`[LLMService] Max tool turns (${MAX_TOOL_TURNS}) reached, stopping tool execution`);
+                                    return;
+                                }
 
-                            // Notify UI about each tool call
-                            for (const toolCall of toolCalls) {
-                                callbacks.onToolCall(toolCall);
-                            }
+                                // Notify UI about each tool call
+                                for (const toolCall of toolCalls) {
+                                    callbacks.onToolCall(toolCall);
+                                }
 
-                            // Execute ALL tool calls in parallel
-                            const results = await this.executeToolCallsBatch(toolCalls);
+                                // Execute ALL tool calls in parallel
+                                const results = await this.executeToolCallsBatch(toolCalls);
 
-                            // Process results
-                            const toolResults: { toolCall: any; result: any }[] = [];
+                                // Process results
+                                const toolResults: { toolCall: any; result: any }[] = [];
 
-                            for (const toolCall of toolCalls) {
-                                const result = results.get(toolCall.id);
+                                for (const toolCall of toolCalls) {
+                                    const result = results.get(toolCall.id);
 
-                                callbacks.onToolResult(toolCall.name, result);
+                                    callbacks.onToolResult(toolCall.name, result);
 
-                                await this.parseToolResult(toolCall.name, result);
-                                toolResults.push({ toolCall, result });
-                            }
+                                    await this.parseToolResult(toolCall.name, result);
+                                    toolResults.push({ toolCall, result });
+                                }
 
-                            // Sync state ONCE after all tools complete
-                            const toolNames = toolCalls.map(tc => tc.name);
-                            await this.handleBatchToolSync(toolNames);
+                                // Sync state ONCE after all tools complete
+                                const toolNames = toolCalls.map(tc => tc.name);
+                                await this.handleBatchToolSync(toolNames);
 
-                            // Build updated history with ALL tool calls and results
-                            // Add assistant's message with ALL tool calls
-                            currentHistory.push({
-                                role: 'assistant',
-                                content: '',
-                                toolCalls: toolResults.map(({ toolCall }) => ({
-                                    id: toolCall.id,
-                                    type: 'function',
-                                    function: {
-                                        name: toolCall.name,
-                                        arguments: JSON.stringify(toolCall.arguments)
-                                    }
-                                }))
-                            } as any);
-
-                            // Add ALL tool results
-                            for (const { toolCall, result } of toolResults) {
+                                // Build updated history with ALL tool calls and results
+                                // Add assistant's message with ALL tool calls
                                 currentHistory.push({
-                                    role: 'tool',
-                                    content: JSON.stringify(result),
-                                    toolCallId: toolCall.id
+                                    role: 'assistant',
+                                    content: '',
+                                    toolCalls: toolResults.map(({ toolCall }) => ({
+                                        id: toolCall.id,
+                                        type: 'function',
+                                        function: {
+                                            name: toolCall.name,
+                                            arguments: JSON.stringify(toolCall.arguments)
+                                        }
+                                    }))
                                 } as any);
-                            }
 
-                            callbacks.onStreamStart();
-                            continueLoop = true; // Continue to next iteration
+                                // Add ALL tool results (with combat formatting for better LLM guidance)
+                                for (const { toolCall, result } of toolResults) {
+                                    const formattedResult = toolCall.name
+                                        ? formatCombatToolResponse(toolCall.name, result)
+                                        : null;
+
+                                    currentHistory.push({
+                                        role: 'tool',
+                                        content: formattedResult || JSON.stringify(result),
+                                        toolCallId: toolCall.id
+                                    } as any);
+                                }
+
+                                callbacks.onStreamStart();
+                                continueLoop = true; // Continue to next iteration
+                                console.log(`[LLMService] Tool handling complete, continueLoop=${continueLoop}`);
+                            })();
                         },
-                        () => resolve(), // onComplete
+                        // FIX: Wait for tool handling to complete before resolving
+                        async () => {
+                            if (toolHandlingPromise) {
+                                console.log('[LLMService] Waiting for tool handling to complete...');
+                                await toolHandlingPromise;
+                                console.log('[LLMService] Tool handling finished, resolving promise');
+                            }
+                            resolve();
+                        },
                         (error: string) => reject(new Error(error)) // onError
                     );
                 });
+                
+                console.log(`[LLMService] Stream iteration complete, continueLoop=${continueLoop}, turnCount=${turnCount}`);
             }
 
             if (turnCount >= MAX_TOOL_TURNS) {

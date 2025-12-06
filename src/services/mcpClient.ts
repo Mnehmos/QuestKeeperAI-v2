@@ -1,5 +1,6 @@
 import { Command, Child } from '@tauri-apps/plugin-shell';
 import { v4 as uuidv4 } from 'uuid';
+import { eventBus } from '../utils/eventBus';
 
 interface JsonRpcRequest {
     jsonrpc: '2.0';
@@ -92,6 +93,12 @@ export class McpClient {
                 // Only log non-routine stderr
                 if (!line.includes('[SQLite]') && !line.includes('running on stdio')) {
                     console.warn(`[McpClient] ${this.serverName} stderr: ${line}`);
+                    
+                    eventBus.emit('warn:log', {
+                        message: line,
+                        source: `McpClient:${this.serverName}`,
+                        timestamp: Date.now()
+                    });
                 } else {
                     console.log(`[McpClient] ${this.serverName}: ${line}`);
                 }

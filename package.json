@@ -25,6 +25,7 @@
     "remark-gfm": "^4.0.1",
     "three": "^0.181.2",
     "uuid": "^13.0.0",
+    "zod": "^3.25.76",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

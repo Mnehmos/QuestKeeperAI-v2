@@ -4,8 +4,9 @@ import { OpenAIProvider } from './providers/OpenAIProvider';
 import { AnthropicProvider } from './providers/AnthropicProvider';
 import { GeminiProvider } from './providers/GeminiProvider';
 import { ChatMessage, LLMProviderInterface, LLMResponse } from './types';
-import { parseMcpResponse, executeBatchToolCalls, BatchToolCall } from '../../utils/mcpUtils';
+import { parseMcpResponse } from '../../utils/mcpUtils';
 import { formatCombatToolResponse } from '../../utils/toolResponseFormatter';
+import { tools, getLocalTools, executeLocalTool } from '../toolRegistry';
 
 // Combat tools from rpg-mcp that should trigger combat state sync
 const COMBAT_TOOLS = new Set([
@@ -83,11 +84,23 @@ class LLMService {
 
         try {
             const response = await mcpManager.gameStateClient.listTools();
-            this.toolCache = response.tools || [];
+            const remoteTools = response.tools || [];
+            
+            // Merge with local tools
+            const localTools = getLocalTools();
+            // TODO: Deduplicate if needed
+            const allTools = [...remoteTools, ...localTools];
+            
+            this.toolCache = allTools;
             this.toolCacheTime = now;
             return this.toolCache || [];
         } catch (e) {
             console.warn('[LLMService] Failed to fetch tools:', e);
+            // Fallback to local tools only if server is down? 
+            // Better to return partial list than nothing
+            if (!this.toolCache) {
+                return getLocalTools();
+            }
             return this.toolCache || [];
         }
     }
@@ -97,23 +110,31 @@ class LLMService {
      */
     private async executeToolCallsBatch(toolCalls: any[]): Promise<Map<string, any>> {
         const results = new Map<string, any>();
+        const localToolNames = new Set(Object.keys(tools));
         
-        const batchCalls: BatchToolCall[] = toolCalls.map(tc => ({
-            name: tc.name,
-            args: tc.arguments
-        }));
-
-        const batchResults = await executeBatchToolCalls(mcpManager.gameStateClient, batchCalls);
-
-        toolCalls.forEach((tc, index) => {
-            const result = batchResults[index];
-            if (result.error) {
-                results.set(tc.id, { error: result.error });
-            } else {
-                results.set(tc.id, result.result);
+        const promises = toolCalls.map(async (tc) => {
+            try {
+                let result;
+                if (localToolNames.has(tc.name)) {
+                     console.log(`[LLMService] Executing local tool: ${tc.name}`);
+                     result = await executeLocalTool(tc.name, tc.arguments);
+                } else {
+                     // Remote tool
+                     result = await mcpManager.gameStateClient.callTool(tc.name, tc.arguments);
+                }
+                
+                if (result && result.error) {
+                    results.set(tc.id, { error: result.error }); 
+                } else {
+                    results.set(tc.id, result);
+                }
+            } catch (e: any) {
+                console.error(`[LLMService] Tool execution failed for ${tc.name}:`, e);
+                results.set(tc.id, { error: e.message || 'Unknown error' });
             }
         });
 
+        await Promise.all(promises);
         return results;
     }
 

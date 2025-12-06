@@ -1,18 +1,20 @@
 import { useCombatStore, Entity, Vector3, EntityMetadata } from '../stores/combatStore';
 import { CreatureSize } from '../utils/gridHelpers';
 import { v4 as uuidv4 } from 'uuid';
+import { watchdogTools } from '../tools/watchdog';
 
 export interface ToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, any>; // JSON Schema definition
-  execute: (args: any) => void;
+  execute: (args: any) => Promise<any> | any;
 }
 
 // Helper to generate unique IDs
 const generateId = () => uuidv4();
 
 export const tools: Record<string, ToolDefinition> = {
+  ...watchdogTools,
   spawn_entity: {
     name: 'spawn_entity',
     description: 'Spawns a new entity (character, monster, or NPC) on the battlemap.',
@@ -179,7 +181,7 @@ export const tools: Record<string, ToolDefinition> = {
   }
 };
 
-export const executeTool = (toolName: string, args: any) => {
+export const executeLocalTool = async (toolName: string, args: any) => {
   const tool = tools[toolName];
   if (!tool) {
     console.error(`[ToolRegistry] Unknown tool: ${toolName}`);
@@ -188,8 +190,17 @@ export const executeTool = (toolName: string, args: any) => {
   
   try {
     // In a real app, we might validate args against tool.parameters JSON schema here
-    tool.execute(args);
+    return await tool.execute(args);
   } catch (error) {
     console.error(`[ToolRegistry] Error executing ${toolName}:`, error);
+    throw error;
   }
+};
+
+export const getLocalTools = () => {
+  return Object.values(tools).map(t => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: t.parameters
+  }));
 };

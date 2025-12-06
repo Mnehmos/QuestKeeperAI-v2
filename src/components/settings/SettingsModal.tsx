@@ -1,5 +1,7 @@
 import React from 'react';
 import { useSettingsStore, LLMProvider } from '../../stores/settingsStore';
+import { open } from '@tauri-apps/plugin-shell';
+import { appLogDir } from '@tauri-apps/api/path';
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -17,6 +19,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
         setModel,
         setSystemPrompt,
     } = useSettingsStore();
+
+    const handleOpenLogs = async () => {
+        try {
+            const logDir = await appLogDir();
+            console.log('[Settings] Opening log dir:', logDir);
+            await open(logDir);
+        } catch (error) {
+            console.error('[Settings] Failed to open log dir:', error);
+        }
+    };
 
     // Local state for the form to allow "Save & Apply" behavior
     // However, for instant feedback/simplicity, we can keep using the store directly
@@ -150,6 +162,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                             className="h-24 w-full rounded border border-terminal-green bg-black px-3 py-2 text-terminal-green focus:border-terminal-green-bright focus:outline-none"
                             placeholder="Define the AI's behavior..."
                         />
+                    </div>
+
+                    {/* Debug / Logs */}
+                    <div className="pt-2 border-t border-terminal-green-dim">
+                        <label className="block text-sm font-bold text-terminal-green mb-2">DEBUGGING</label>
+                        <button
+                            onClick={handleOpenLogs}
+                            className="w-full rounded border border-terminal-green bg-black/50 px-4 py-2 font-mono text-sm text-terminal-green transition-colors hover:bg-terminal-green/10 focus:outline-none"
+                        >
+                            📂 OPEN LOG FOLDER
+                        </button>
                     </div>
                 </div>
 

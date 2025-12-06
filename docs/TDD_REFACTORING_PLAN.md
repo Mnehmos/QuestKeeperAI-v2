@@ -62,8 +62,8 @@ npm run test:coverage # Coverage report
 |----------|------|--------|-------|-------|
 | 🔴 1 | `src/utils/mcpUtils.ts` | ✅ DONE | 28 | Pure functions fully tested |
 | 🔴 2 | `src/utils/gridHelpers.ts` | ✅ DONE | 18 | Pure math fully tested |
-| 🟡 3 | `src/utils/toolResponseFormatter.ts` | ⏳ TODO | - | Large formatter - add tests as touched |
-| 🟡 4 | `src/stores/partyStore.ts` | ⏳ TODO | - | Core state logic, needs mock MCP |
+| 🟡 3 | `src/utils/toolResponseFormatter.ts` | ✅ DONE | 14 | Character, inventory, quest, encounter formatters |
+| 🟡 4 | `src/stores/partyStore.ts` | ✅ DONE | 19 | State, setters, selectors fully tested |
 | 🟢 5 | `src/services/llm/LLMService.ts` | ⏳ TODO | - | Requires provider mocks |
 
 ---
@@ -104,8 +104,8 @@ For all new code:
 
 | Path | Action | Reason |
 |------|--------|--------|
-| `node-wrapper/` | DELETE | Legacy Node.js wrapper, unused |
-| `rpg-mcp-loader.js` | DELETE | Obsolete loader script |
+| `node-wrapper/` | ✅ DELETED | Legacy Node.js wrapper, unused |
+| `rpg-mcp-loader.js` | ✅ DELETED | Obsolete loader script |
 | `_deprecated/` | ARCHIVE | Contains old binaries/DBs - confirm before deleting |
 
 ---
@@ -115,8 +115,8 @@ For all new code:
 | Milestone | Target | Current |
 |-----------|--------|---------|
 | Phase 1 | Infrastructure ready | ✅ 100% |
-| Phase 2 | Utils >80% coverage | ~60% (2/4 files) |
-| Phase 3 | Stores >70% coverage | 0% |
+| Phase 2 | Utils >80% coverage | ✅ 100% (4/4 files) |
+| Phase 3 | Stores >70% coverage | ~14% (1/7 files) |
 | Phase 4 | Services >60% coverage | 0% |
 | Phase 5 | Components >50% coverage | 0% |
 
@@ -143,15 +143,17 @@ npm run test:watch # Keep running during development
 4. ✅ `src/test/mocks/tauriApis.ts` - Mock Tauri shell/fs
 5. ✅ `src/utils/mcpUtils.test.ts` - 28 tests for MCP utilities
 6. ✅ `src/utils/gridHelpers.test.ts` - 18 tests for grid math
+7. ✅ `src/utils/toolResponseFormatter.test.ts` - 14 tests for response formatting
+8. ✅ `src/stores/partyStore.test.ts` - 19 tests for party store
 
 ---
 
 ## Test Results Summary
 
 ```
-Test Files  2 passed (2)
-Tests       46 passed (46)
-Duration    3.97s
+Test Files  4 passed (4)
+Tests       79 passed (79)
+Duration    2.60s
 ```
 
 ### mcpUtils.test.ts (28 tests)
@@ -168,14 +170,31 @@ Duration    3.97s
 - ✅ calculateGridPosition - 8 tests
 - ✅ Integration tests - 2 tests
 
+### toolResponseFormatter.test.ts (14 tests)
+- ✅ Character formatters - 3 tests
+- ✅ Inventory formatters - 2 tests
+- ✅ Quest formatters - 1 test
+- ✅ Encounter formatters - 2 tests
+- ✅ World visualization formatters - 1 test
+- ✅ Secret keeper formatters - 1 test
+- ✅ Main dispatcher functions - 2 tests
+- ✅ Edge cases - 2 tests
+
+### partyStore.test.ts (19 tests)
+- ✅ Initial state - 1 test
+- ✅ Basic setters - 4 tests
+- ✅ Selectors - 8 tests
+- ✅ State updates - 3 tests
+- ✅ Type exports - 2 tests
+
 ---
 
 ## Next Actions
 
 ### Immediate (This Week)
-1. [ ] Add tests for `toolResponseFormatter.ts` (high LOC, complex parsing)
-2. [ ] Add tests for `partyStore.ts` (core game state)
-3. [ ] Delete legacy `node-wrapper/` and `rpg-mcp-loader.js`
+1. [x] Add tests for `toolResponseFormatter.ts` ✅ 14 tests
+2. [x] Add tests for `partyStore.ts` ✅ 19 tests
+3. [x] Delete legacy `node-wrapper/` and `rpg-mcp-loader.js` ✅ DONE
 
 ### Next Week
 1. [ ] Add tests for `gameStateStore.ts`

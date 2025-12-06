@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { ThreeEvent } from '@react-three/fiber';
 import { Edges } from '@react-three/drei';
 import { useCombatStore, type TerrainFeature } from '../../stores/combatStore';
@@ -47,11 +47,15 @@ function findConnectedWalls(start: TerrainFeature, all: TerrainFeature[]): Terra
 
 export const Terrain: React.FC<TerrainProps> = ({ feature, allTerrain }) => {
   const { dimensions, position, color, type } = feature;
-  const [showTooltip, setShowTooltip] = useState(false);
+  const selectedTerrainId = useCombatStore((state) => state.selectedTerrainId);
+  const selectTerrain = useCombatStore((state) => state.selectTerrain);
+  
+  const isSelected = selectedTerrainId === feature.id;
   
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    setShowTooltip(!showTooltip);
+    // Toggle: if already selected, deselect; otherwise select this terrain
+    selectTerrain(isSelected ? null : feature.id);
     console.log('[Terrain] Clicked:', feature.type, 'at', feature.position);
   };
   
@@ -99,25 +103,58 @@ export const Terrain: React.FC<TerrainProps> = ({ feature, allTerrain }) => {
           />
           <Edges color="#1a1a1a" linewidth={1.5} />
         </mesh>
-        {showTooltip && <TerrainTooltip feature={feature} />}
+        {isSelected && (
+          <group position={[wallGeometry.center.x, wallGeometry.center.y + wallGeometry.dimensions.height / 2 + 0.5, wallGeometry.center.z]}>
+            <TerrainTooltip feature={feature} />
+          </group>
+        )}
       </group>
     );
   }
 
-  // Render non-wall terrain normally
+  // Get material properties based on terrain type
+  const getMaterialProps = () => {
+    switch (type) {
+      case 'water':
+        return { roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.6 };
+      case 'difficult':
+        return { roughness: 0.9, metalness: 0.0, transparent: true, opacity: feature.opacity ?? 0.7 };
+      case 'obstacle':
+        return { roughness: 0.8, metalness: 0.2, transparent: false, opacity: 1.0 };
+      case 'elevation':
+      case 'floor':
+        return { roughness: 0.6, metalness: 0.1, transparent: true, opacity: feature.opacity ?? 0.5 };
+      case 'ceiling':
+        return { roughness: 0.4, metalness: 0.2, transparent: true, opacity: feature.opacity ?? 0.3 };
+      default:
+        return { roughness: 0.7, metalness: 0.1, transparent: false, opacity: 1.0 };
+    }
+  };
+
+  const materialProps = getMaterialProps();
+
+  // Render non-wall terrain with 2.5D styling
   return (
     <group onClick={handleClick}>
       <mesh position={[position.x, position.y, position.z]} castShadow receiveShadow>
         <boxGeometry args={[dimensions.width, dimensions.height, dimensions.depth]} />
         <meshStandardMaterial 
           color={color}
-          roughness={type === 'water' ? 0.1 : 0.7}
-          metalness={type === 'water' ? 0.3 : 0.1}
-          transparent={type === 'water'}
-          opacity={type === 'water' ? 0.6 : 1.0}
+          roughness={materialProps.roughness}
+          metalness={materialProps.metalness}
+          transparent={materialProps.transparent}
+          opacity={materialProps.opacity}
         />
+        {/* Add edge highlight for obstacles */}
+        {(type === 'obstacle' || type === 'wall') && (
+          <Edges color="#1a1a1a" linewidth={1.5} />
+        )}
       </mesh>
-      {showTooltip && <TerrainTooltip feature={feature} />}
+      {isSelected && (
+        <group position={[position.x, position.y + dimensions.height / 2 + 0.5, position.z]}>
+          <TerrainTooltip feature={feature} />
+        </group>
+      )}
     </group>
   );
 };

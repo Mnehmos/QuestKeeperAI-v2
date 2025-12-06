@@ -11,7 +11,7 @@ export const TerrainTooltip: React.FC<TerrainTooltipProps> = ({ feature }) => {
 
   return (
     <Html
-      position={[0, dimensions.height + 0.5, 0]}
+      position={[0, 0, 0]}
       center
       style={{
         pointerEvents: 'none',

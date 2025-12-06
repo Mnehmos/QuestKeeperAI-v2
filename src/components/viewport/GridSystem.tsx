@@ -1,26 +1,67 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Html } from '@react-three/drei';
+import { useCombatStore } from '../../stores/combatStore';
 
 export const GridSystem: React.FC = () => {
-  const gridSize = 100;
-  const divisions = 100;
+  const entities = useCombatStore((state) => state.entities);
+  const terrain = useCombatStore((state) => state.terrain);
   
-  // MCP uses 0-20 coordinates, visualizer is centered at 0,0
-  // So MCP 0-20 maps to visualizer -10 to +10
-  const mcpGridSize = 20;
-  const labelInterval = 5;
+  // Calculate dynamic bounds from all entities and terrain
+  const bounds = useMemo(() => {
+    let minX = 0, maxX = 20, minZ = 0, maxZ = 20;
+    
+    // Check entity positions (in MCP coords)
+    entities.forEach(entity => {
+      const mcpX = entity.position.x + 10; // Convert viz to MCP
+      const mcpZ = entity.position.z + 10;
+      minX = Math.min(minX, mcpX);
+      maxX = Math.max(maxX, mcpX);
+      minZ = Math.min(minZ, mcpZ);
+      maxZ = Math.max(maxZ, mcpZ);
+    });
+    
+    // Check terrain positions (in MCP coords)
+    terrain.forEach(t => {
+      const mcpX = t.position.x + 10; // Convert viz to MCP
+      const mcpZ = t.position.z + 10;
+      minX = Math.min(minX, mcpX);
+      maxX = Math.max(maxX, mcpX);
+      minZ = Math.min(minZ, mcpZ);
+      maxZ = Math.max(maxZ, mcpZ);
+    });
+    
+    // Add padding and round to nice numbers
+    const padding = 5;
+    minX = Math.floor((minX - padding) / 5) * 5;
+    maxX = Math.ceil((maxX + padding) / 5) * 5;
+    minZ = Math.floor((minZ - padding) / 5) * 5;
+    maxZ = Math.ceil((maxZ + padding) / 5) * 5;
+    
+    // Calculate the center offset for visualization
+    const centerX = (minX + maxX) / 2;
+    const centerZ = (minZ + maxZ) / 2;
+    const rangeX = maxX - minX;
+    const rangeZ = maxZ - minZ;
+    const gridSize = Math.max(rangeX, rangeZ, 20);
+    
+    return { minX, maxX, minZ, maxZ, centerX, centerZ, gridSize };
+  }, [entities, terrain]);
+  
+  const gridSize = Math.max(bounds.gridSize, 100);
+  const divisions = Math.max(bounds.gridSize, 100);
+  const labelInterval = bounds.gridSize > 50 ? 10 : 5;
   const labels: React.ReactElement[] = [];
   
-  // Helper to convert visualizer coordinate to MCP coordinate for labels
-  const toMCP = (vizCoord: number) => vizCoord + (mcpGridSize / 2);
+  // Helper to convert MCP coord to visualizer coord  
+  const toViz = (mcpCoord: number) => mcpCoord - 10;
   
-  // CENTER AXIS LABELS (X-axis at z=0, horizontal center)
-  for (let vizX = -10; vizX <= 10; vizX += labelInterval) {
-    const mcpX = toMCP(vizX);
+  // CENTER AXIS LABELS (X-axis at z=centerZ, horizontal)
+  for (let mcpX = bounds.minX; mcpX <= bounds.maxX; mcpX += labelInterval) {
+    const vizX = toViz(mcpX);
     labels.push(
       <Html
-        key={`center-x-${vizX}`}
-        position={[vizX, 0.15, 0]}
+        key={`center-x-${mcpX}`}
+        position={[vizX, 0.15, toViz(bounds.centerZ)]}
         center
         style={{
           color: '#00ff41',
@@ -38,13 +79,13 @@ export const GridSystem: React.FC = () => {
     );
   }
 
-  // CENTER AXIS LABELS (Z-axis at x=0, vertical center)
-  for (let vizZ = -10; vizZ <= 10; vizZ += labelInterval) {
-    const mcpZ = toMCP(vizZ);
+  // CENTER AXIS LABELS (Z-axis at x=centerX, vertical)
+  for (let mcpZ = bounds.minZ; mcpZ <= bounds.maxZ; mcpZ += labelInterval) {
+    const vizZ = toViz(mcpZ);
     labels.push(
       <Html
-        key={`center-z-${vizZ}`}
-        position={[0, 0.15, vizZ]}
+        key={`center-z-${mcpZ}`}
+        position={[toViz(bounds.centerX), 0.15, vizZ]}
         center
         style={{
           color: '#00ff41',
@@ -67,10 +108,10 @@ export const GridSystem: React.FC = () => {
       {/* Size 100, Divisions 100, Center Color (terminal-green), Grid Color (terminal-dim) */}
       <gridHelper args={[gridSize, divisions, '#00ff41', '#1a1a1a']} />
       
-      {/* Grid coordinate labels - MCP style (0-20) */}
+      {/* Grid coordinate labels - MCP style (dynamic) */}
       {labels}
       
-      {/* Center point label showing MCP origin */}
+      {/* Origin label showing MCP (0,0) */}
       <Html
         position={[-10, 0.2, -10]}
         center
@@ -88,8 +129,8 @@ export const GridSystem: React.FC = () => {
         0,0
       </Html>
       
-      {/* Compass Rose */}
-      <group position={[8, 0.2, -8]}>
+      {/* Compass Rose - positioned dynamically based on bounds */}
+      <group position={[toViz(bounds.maxX - 5), 0.2, toViz(bounds.minZ + 5)]}>
         {/* North */}
         <Html
           position={[0, 0, -3]}

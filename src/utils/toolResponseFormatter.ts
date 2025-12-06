@@ -46,9 +46,12 @@ function processFormattedCombatResponse(text: string): string {
                 participants: stateJson.participants?.map((p: any) => ({ name: p.name, id: p.id, hp: p.hp }))
             });
             
-            // Update combat store with the state
-            useCombatStore.getState().updateFromStateJson(stateJson);
-            console.log('[processFormattedCombatResponse] Called updateFromStateJson');
+            // Defer state update to avoid React render-cycle warning
+            // ("Cannot update a component while rendering a different component")
+            queueMicrotask(() => {
+              useCombatStore.getState().updateFromStateJson(stateJson);
+              console.log('[processFormattedCombatResponse] Called updateFromStateJson (deferred)');
+            });
         } catch (e) {
             console.warn('[processFormattedCombatResponse] Failed to parse STATE_JSON:', e);
         }

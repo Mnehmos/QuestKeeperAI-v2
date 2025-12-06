@@ -17,7 +17,8 @@ export const Token: React.FC<TokenProps> = ({ entity, isSelected }) => {
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    selectEntity(entity.id);
+    // Toggle: if already selected, deselect; otherwise select
+    selectEntity(isSelected ? null : entity.id);
   };
 
   // Calculate position based on grid snapping rules

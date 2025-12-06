@@ -46,16 +46,21 @@ export interface GridConfig {
 
 export interface TerrainFeature {
   id: string;
-  type: string;
+  type: 'wall' | 'obstacle' | 'difficult' | 'water' | 'elevation' | 'floor' | 'ceiling' | string;
   position: Vector3;
   dimensions: { width: number; height: number; depth: number };
   blocksMovement: boolean;
   coverType?: 'half' | 'three-quarters' | 'full' | 'none';
   color: string;
+  // 2.5D layer support (Foundry VTT style)
+  elevation?: number;  // Base elevation (0 = ground, 1 = first floor, -1 = basement)
+  layer?: number;      // Visual layer for rendering order
+  opacity?: number;    // For transparent floors/ceilings
 }
 
 /**
  * Structure returned by get_encounter_state (now returns JSON!)
+ * Updated to include spatial data from MCP server
  */
 interface EncounterStateJson {
   encounterId: string;
@@ -77,7 +82,24 @@ interface EncounterStateJson {
     conditions: string[];
     isDefeated: boolean;
     isCurrentTurn: boolean;
+    // New spatial fields from MCP server
+    position?: { x: number; y: number; z?: number };
+    size?: string;
+    movementSpeed?: number;
+    movementRemaining?: number;
   }>;
+  // Optional terrain data from MCP
+  terrain?: {
+    obstacles: Array<{ x: number; y: number } | string>;
+    difficultTerrain: Array<{ x: number; y: number } | string>;
+    water?: Array<{ x: number; y: number } | string>;
+  };
+  gridBounds?: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  };
 }
 
 interface CombatState {
@@ -143,28 +165,50 @@ function determineEntityType(_name: string, isEnemy: boolean, isCurrentTurn: boo
 
 /**
  * Convert EncounterStateJson to Entity array for the battlemap
+ * Now uses actual positions from MCP when available
  */
 function stateJsonToEntities(data: EncounterStateJson, gridConfig: GridConfig): Entity[] {
   const entities: Entity[] = [];
   const participantCount = data.participants.length;
   
-  // Position participants in a circle around the center
+  // Fallback: calculate circle positions if MCP doesn't provide positions
   const radius = Math.min(gridConfig.size / 4, 6);
   
   data.participants.forEach((p, index) => {
-    // Calculate position in a circle
-    const angle = (2 * Math.PI * index) / participantCount - Math.PI / 2; // Start from top
+    let x: number, z: number;
     
-    const x = Math.round(Math.cos(angle) * radius);
-    const z = Math.round(Math.sin(angle) * radius);
+    // Use actual MCP position if available, otherwise calculate circle position
+    if (p.position && typeof p.position.x === 'number' && typeof p.position.y === 'number') {
+      // MCP uses x,y for grid; visualizer uses x,z (y is vertical)
+      // Also need to center: MCP 0-20 maps to visualizer -10 to +10
+      x = p.position.x - 10;
+      z = p.position.y - 10;
+      console.log(`[stateJsonToEntities] ${p.name} using MCP position: (${p.position.x},${p.position.y}) -> viz (${x},${z})`);
+    } else {
+      // Fallback: arrange in circle
+      const angle = (2 * Math.PI * index) / participantCount - Math.PI / 2;
+      x = Math.round(Math.cos(angle) * radius);
+      z = Math.round(Math.sin(angle) * radius);
+    }
     
     const { type, color } = determineEntityType(p.name, p.isEnemy, p.isCurrentTurn);
+    
+    // Map MCP size to CreatureSize
+    const sizeMap: Record<string, CreatureSize> = {
+      'tiny': 'Tiny',
+      'small': 'Small', 
+      'medium': 'Medium',
+      'large': 'Large',
+      'huge': 'Huge',
+      'gargantuan': 'Gargantuan'
+    };
+    const creatureSize = sizeMap[p.size?.toLowerCase() || 'medium'] || 'Medium';
 
     const entity: Entity = {
       id: p.id,
       name: p.name,
       type,
-      size: 'Medium' as CreatureSize,
+      size: creatureSize,
       position: { x, y: 0, z },
       color,
       model: 'box',
@@ -184,6 +228,98 @@ function stateJsonToEntities(data: EncounterStateJson, gridConfig: GridConfig): 
   });
 
   return entities;
+}
+
+/**
+ * Convert MCP terrain data to TerrainFeature array for 2.5D visualization
+ * Supports obstacles, difficult terrain, and multi-layer elevation
+ * Handles both string format "x,y" and object format {x,y}
+ */
+function stateJsonToTerrain(data: EncounterStateJson): TerrainFeature[] {
+  const terrain: TerrainFeature[] = [];
+  
+  if (!data.terrain) {
+    console.log('[stateJsonToTerrain] No terrain data in state');
+    return terrain;
+  }
+  
+  // Helper to parse position from string "x,y" or object {x,y}
+  const parsePos = (pos: string | { x: number; y: number }): { x: number; y: number } | null => {
+    if (typeof pos === 'string') {
+      const parts = pos.split(',').map(Number);
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        return { x: parts[0], y: parts[1] };
+      }
+      console.warn('[stateJsonToTerrain] Invalid position string:', pos);
+      return null;
+    }
+    if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+      return pos;
+    }
+    console.warn('[stateJsonToTerrain] Invalid position object:', pos);
+    return null;
+  };
+  
+  // Convert obstacles to 3D walls/pillars
+  data.terrain.obstacles?.forEach((rawPos, i) => {
+    const pos = parsePos(rawPos as any);
+    if (!pos) return;
+    
+    console.log(`[stateJsonToTerrain] Obstacle ${i}: MCP (${pos.x},${pos.y}) -> viz (${pos.x - 10},${pos.y - 10})`);
+    terrain.push({
+      id: `obstacle-${i}`,
+      type: 'obstacle',
+      // MCP 0-20 → visualizer -10 to +10
+      position: { x: pos.x - 10, y: 1, z: pos.y - 10 },
+      dimensions: { width: 1, height: 2, depth: 1 },
+      blocksMovement: true,
+      coverType: 'full',
+      color: '#4a4a4a',
+      elevation: 0,
+      layer: 1
+    });
+  });
+  
+  // Convert difficult terrain to ground markers
+  data.terrain.difficultTerrain?.forEach((rawPos, i) => {
+    const pos = parsePos(rawPos as any);
+    if (!pos) return;
+    
+    console.log(`[stateJsonToTerrain] Difficult ${i}: MCP (${pos.x},${pos.y}) -> viz (${pos.x - 10},${pos.y - 10})`);
+    terrain.push({
+      id: `difficult-${i}`,
+      type: 'difficult',
+      position: { x: pos.x - 10, y: 0.05, z: pos.y - 10 },
+      dimensions: { width: 1, height: 0.1, depth: 1 },
+      blocksMovement: false,
+      color: '#8b4513',
+      elevation: 0,
+      layer: 0,
+      opacity: 0.7
+    });
+  });
+  
+  // Convert water terrain to blue transparent tiles
+  data.terrain.water?.forEach((rawPos, i) => {
+    const pos = parsePos(rawPos as any);
+    if (!pos) return;
+    
+    console.log(`[stateJsonToTerrain] Water ${i}: MCP (${pos.x},${pos.y}) -> viz (${pos.x - 10},${pos.y - 10})`);
+    terrain.push({
+      id: `water-${i}`,
+      type: 'water',
+      position: { x: pos.x - 10, y: 0.02, z: pos.y - 10 },
+      dimensions: { width: 1, height: 0.05, depth: 1 },
+      blocksMovement: false,
+      color: '#1e90ff',
+      elevation: 0,
+      layer: 0,
+      opacity: 0.6
+    });
+  });
+  
+  console.log(`[stateJsonToTerrain] Created ${terrain.length} terrain features`);
+  return terrain;
 }
 
 /**
@@ -293,10 +429,12 @@ export const useCombatStore = create<CombatState>((set, get) => ({
     const { gridConfig } = get();
     
     const entities = stateJsonToEntities(stateJson, gridConfig);
+    const terrain = stateJsonToTerrain(stateJson);
     const description = generateBattlefieldDescription(stateJson);
     
     set({
       entities,
+      terrain,  // Now syncing terrain from MCP!
       activeEncounterId: stateJson.encounterId,
       currentRound: stateJson.round,
       currentTurnName: stateJson.currentTurn?.name || null,

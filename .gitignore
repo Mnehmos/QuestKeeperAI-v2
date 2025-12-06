@@ -54,3 +54,6 @@ nul
 con
 prn
 aux
+
+# Developer-only agent orchestration docs (not for version control)
+Agents/

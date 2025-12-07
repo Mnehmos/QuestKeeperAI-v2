@@ -47,16 +47,55 @@ function findConnectedWalls(start: TerrainFeature, all: TerrainFeature[]): Terra
 
 export const Terrain: React.FC<TerrainProps> = ({ feature, allTerrain }) => {
   const { dimensions, position, color, type } = feature;
+  const measureMode = useCombatStore((state) => state.measureMode);
+  const measureStart = useCombatStore((state) => state.measureStart);
+  const measureEnd = useCombatStore((state) => state.measureEnd);
+  const setMeasureStart = useCombatStore((state) => state.setMeasureStart);
+  const setMeasureEnd = useCombatStore((state) => state.setMeasureEnd);
+  const setClickedTileCoord = useCombatStore((state) => state.setClickedTileCoord);
+  const clickedTileCoord = useCombatStore((state) => state.clickedTileCoord);
+  const setCursorPosition = useCombatStore((state) => state.setCursorPosition);
   const selectedTerrainId = useCombatStore((state) => state.selectedTerrainId);
   const selectTerrain = useCombatStore((state) => state.selectTerrain);
   
   const isSelected = selectedTerrainId === feature.id;
   
+  const handlePointerMove = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
+    const vizX = Math.floor(e.point.x);
+    const vizZ = Math.floor(e.point.z);
+    setCursorPosition({ x: vizX, y: vizZ });
+  };
+
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    // Toggle: if already selected, deselect; otherwise select this terrain
-    selectTerrain(isSelected ? null : feature.id);
-    console.log('[Terrain] Clicked:', feature.type, 'at', feature.position);
+    const vizX = Math.floor(e.point.x);
+    const vizZ = Math.floor(e.point.z);
+    const mcpX = vizX + 10;
+    const mcpZ = vizZ + 10;
+
+    if (measureMode) {
+      if (!measureStart) {
+        setMeasureStart({ x: vizX, y: vizZ }); 
+      } else if (!measureEnd) {
+        setMeasureEnd({ x: vizX, y: vizZ });
+      } else {
+        setMeasureStart({ x: vizX, y: vizZ });
+        setMeasureEnd(null);
+      }
+    } else {
+      // Toggle terrain selection
+      selectTerrain(isSelected ? null : feature.id);
+      
+      // Update clicked tile for LOS/Highlight
+      if (clickedTileCoord && clickedTileCoord.x === mcpX && clickedTileCoord.y === mcpZ) {
+        setClickedTileCoord(null);
+      } else {
+        setClickedTileCoord({ x: mcpX, y: mcpZ });
+      }
+    }
+    
+    console.log('[Terrain] Clicked:', feature.type, 'at', {x: vizX, z: vizZ});
   };
   
   // For walls, calculate connected geometry
@@ -94,7 +133,7 @@ export const Terrain: React.FC<TerrainProps> = ({ feature, allTerrain }) => {
     
     // Shift center by +0.5 to align with grid squares (0..1) instead of intersections
     return (
-      <group onClick={handleClick}>
+      <group onClick={handleClick} onPointerMove={handlePointerMove}>
         <mesh position={[wallGeometry.center.x + 0.5, wallGeometry.center.y, wallGeometry.center.z + 0.5]} castShadow receiveShadow>
           <boxGeometry args={[wallGeometry.dimensions.width, wallGeometry.dimensions.height, wallGeometry.dimensions.depth]} />
           <meshStandardMaterial 
@@ -138,7 +177,7 @@ export const Terrain: React.FC<TerrainProps> = ({ feature, allTerrain }) => {
 
   // Render non-wall terrain with 2.5D styling
   return (
-    <group onClick={handleClick}>
+    <group onClick={handleClick} onPointerMove={handlePointerMove}>
       <mesh position={[position.x + 0.5, position.y, position.z + 0.5]} castShadow receiveShadow>
         <boxGeometry args={[dimensions.width, dimensions.height, dimensions.depth]} />
         <meshStandardMaterial 

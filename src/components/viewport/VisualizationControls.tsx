@@ -59,6 +59,32 @@ export const VisualizationControls: React.FC = () => {
       >
         <span>📏</span> Measure Distance
       </button>
+      
+      <div style={{ width: '1px', background: '#555', margin: '0 5px' }} />
+
+      <button
+        onClick={() => {
+            if (window.confirm('Clear the local scene? Visuals will be reset, but the app will attempt to re-sync with the active encounter on the next update.')) {
+                useCombatStore.getState().clearCombat(true); // Keep session active for re-sync
+            }
+        }}
+        style={{
+          background: 'rgba(255, 68, 68, 0.2)',
+          color: '#ff4444',
+          border: '1px solid #ff4444',
+          padding: '8px 16px',
+          borderRadius: '4px',
+          cursor: 'pointer',
+          fontWeight: 'bold',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          transition: 'all 0.2s'
+        }}
+        title="Clear local visualization state"
+      >
+        <span>🗑️</span> Clear
+      </button>
 
       {measureMode && (
         <div style={{

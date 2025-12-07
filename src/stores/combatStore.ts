@@ -35,6 +35,7 @@ export interface Entity {
   position: Vector3;
   color: string;
   model?: string;
+  archetype?: 'humanoid' | 'quadruped' | 'beast' | 'serpent' | 'avian' | 'arachnid' | 'amorphous';
   metadata: EntityMetadata;
   isCurrentTurn?: boolean;
 }
@@ -157,7 +158,7 @@ interface CombatState {
   setCursorPosition: (pos: { x: number, y: number } | null) => void;
   syncCombatState: () => Promise<void>;
   updateFromStateJson: (stateJson: EncounterStateJson) => void;
-  clearCombat: () => void;
+  clearCombat: (keepSession?: boolean) => void;
   setClickedTileCoord: (coord: { x: number; y: number } | null) => void;
 }
 
@@ -742,10 +743,10 @@ export const useCombatStore = create<CombatState>((set, get) => ({
     }
   },
 
-  clearCombat: () => set({
+  clearCombat: (keepSession = false) => set((state) => ({
     entities: [],
     terrain: [],
-    activeEncounterId: null,
+    activeEncounterId: keepSession ? state.activeEncounterId : null,
     currentRound: 0,
     currentTurnName: null,
     turnOrder: [],
@@ -757,7 +758,7 @@ export const useCombatStore = create<CombatState>((set, get) => ({
     measureStart: null,
     measureEnd: null,
     cursorPosition: null
-  }),
+  })),
 
   setClickedTileCoord: (coord) => set({ clickedTileCoord: coord }),
   setShowLineOfSight: (show) => set({ showLineOfSight: show }),

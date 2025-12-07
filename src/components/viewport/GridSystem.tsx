@@ -158,7 +158,21 @@ export const GridSystem: React.FC = () => {
 
   return (
     <group>
-      {/* Size 100, Divisions 100, Center Color (terminal-green), Grid Color (terminal-dim) */}
+      {/* Visible Ground Plane - Earth tones (tan, green, brown) */}
+      <mesh 
+        rotation={[-Math.PI / 2, 0, 0]} 
+        position={[0, -0.02, 0]} 
+        receiveShadow
+      >
+        <planeGeometry args={[gridSize, gridSize]} />
+        <meshStandardMaterial 
+          color="#3d3228"  // Dark earthy brown base
+          roughness={0.95} 
+          metalness={0.0}
+        />
+      </mesh>
+      
+      {/* Grid overlay - terminal green aesthetic */}
       <gridHelper args={[gridSize, divisions, '#00ff41', '#1a1a1a']} />
       
       {labels}

@@ -5,10 +5,51 @@ import { Mesh } from 'three';
 import { Entity, useCombatStore } from '../../stores/combatStore';
 import { calculateGridPosition, CREATURE_SIZE_MAP } from '../../utils/gridHelpers';
 import { EntityTooltip } from './EntityTooltip';
+import { ProceduralCreature, CreatureArchetype } from './models';
 
 interface TokenProps {
   entity: Entity;
   isSelected: boolean;
+}
+
+/**
+ * Infer creature archetype from name patterns if not explicitly set
+ */
+function inferArchetype(name: string): CreatureArchetype {
+  const lowerName = name.toLowerCase();
+  
+  // Quadrupeds
+  if (/\b(wolf|dog|horse|deer|elk|boar|bear|lion|tiger|panther|cat|hound|steed|mount)\b/.test(lowerName)) {
+    return 'quadruped';
+  }
+  
+  // Serpents
+  if (/\b(snake|serpent|worm|eel|naga|wyrm|basilisk)\b/.test(lowerName)) {
+    return 'serpent';
+  }
+  
+  // Avians
+  if (/\b(dragon|wyvern|harpy|eagle|hawk|owl|raven|crow|griffon|pegasus|bat|bird|drake)\b/.test(lowerName)) {
+    return 'avian';
+  }
+  
+  // Arachnids
+  if (/\b(spider|scorpion|crab|beetle|insect|ant|centipede)\b/.test(lowerName)) {
+    return 'arachnid';
+  }
+  
+  // Beasts (hunched/bulky)
+  if (/\b(troll|ogre|giant|ape|yeti|sasquatch|gorilla|minotaur)\b/.test(lowerName)) {
+    return 'beast';
+  }
+  
+  // Amorphous
+  if (/\b(ooze|slime|blob|jelly|elemental|pudding|cube)\b/.test(lowerName)) {
+    return 'amorphous';
+  }
+  
+  // Default to humanoid for most creatures
+  return 'humanoid';
 }
 
 export const Token: React.FC<TokenProps> = ({ entity, isSelected }) => {
@@ -19,6 +60,15 @@ export const Token: React.FC<TokenProps> = ({ entity, isSelected }) => {
   const measureEnd = useCombatStore((state) => state.measureEnd);
   const setMeasureStart = useCombatStore((state) => state.setMeasureStart);
   const setMeasureEnd = useCombatStore((state) => state.setMeasureEnd);
+  const setCursorPosition = useCombatStore((state) => state.setCursorPosition);
+  const setClickedTileCoord = useCombatStore((state) => state.setClickedTileCoord);
+
+  const handlePointerMove = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
+    const vizX = Math.floor(entity.position.x);
+    const vizZ = Math.floor(entity.position.z);
+    setCursorPosition({ x: vizX, y: vizZ });
+  };
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
@@ -40,6 +90,11 @@ export const Token: React.FC<TokenProps> = ({ entity, isSelected }) => {
       return;
     }
 
+    // Update clicked tile for consistency (highlighting)
+    const mcpX = Math.floor(entity.position.x) + 10;
+    const mcpZ = Math.floor(entity.position.z) + 10;
+    setClickedTileCoord({ x: mcpX, y: mcpZ });
+
     // Toggle: if already selected, deselect; otherwise select
     selectEntity(isSelected ? null : entity.id);
   };
@@ -47,70 +102,75 @@ export const Token: React.FC<TokenProps> = ({ entity, isSelected }) => {
   // Calculate position based on grid snapping rules
   const position = calculateGridPosition(entity.position.x, entity.position.z, entity.size, entity.position.y);
   
-  // Calculate dimensions based on size category
+  // Determine archetype for model rendering
+  const archetype: CreatureArchetype = entity.archetype || inferArchetype(entity.name);
+  
+  // Check if we should use procedural model (feature flag - can be toggled)
+  const useProceduralModel = true; // Set to false to revert to cylinders
+  
+  // Calculate dimensions based on size category for fallback/hitbox
   const units = CREATURE_SIZE_MAP[entity.size];
   let height: number;
-  let geometry: React.ReactElement;
-  const emissiveIntensity = isSelected ? 0.3 : 0;
 
   switch (entity.size) {
     case 'Tiny':
     case 'Small':
-      // Small creatures: short cylinders
       height = 0.6;
-      geometry = <cylinderGeometry args={[units / 2, units / 2, height, 16]} />;
       break;
-    
     case 'Medium':
     case 'Large':
-      // Humanoid-like: capsule shapes (cylinder)
       height = entity.size === 'Medium' ? 1.2 : 1.6;
-      const radius = units / 3;
-      geometry = <cylinderGeometry args={[radius, radius, height * 0.6, 12]} />;
       break;
-    
     case 'Huge':
     case 'Gargantuan':
-      // Massive creatures: hexagonal prisms
       height = entity.size === 'Huge' ? 2.0 : 3.0;
-      const hexRadius = units / 2.2;
-      geometry = <cylinderGeometry args={[hexRadius, hexRadius, height, 6]} />;
       break;
-    
     default:
-      // Fallback to medium
       height = 1.2;
-      geometry = <cylinderGeometry args={[units / 3, units / 3, height * 0.6, 12]} />;
   }
 
   return (
-    <mesh
-      ref={meshRef}
+    <group
+      ref={meshRef as any}
       position={position}
       onClick={handleClick}
-      castShadow
-      receiveShadow
+      onPointerMove={handlePointerMove}
     >
-      {geometry}
-      <meshStandardMaterial
-        color={entity.color}
-        roughness={0.6}
-        metalness={0.2}
-        emissive={entity.color}
-        emissiveIntensity={emissiveIntensity}
-      />
-      {isSelected && (
-        <>
-          <Edges
-            scale={1.05}
-            threshold={15}
-            color="yellow"
+      {useProceduralModel ? (
+        <ProceduralCreature
+          archetype={archetype}
+          size={entity.size}
+          color={entity.color}
+          isSelected={isSelected}
+          isEnemy={entity.type === 'monster'}
+        />
+      ) : (
+        // Fallback: Original cylinder geometry
+        <mesh castShadow receiveShadow>
+          <cylinderGeometry args={[units / 3, units / 3, height * 0.6, 12]} />
+          <meshStandardMaterial
+            color={entity.color}
+            roughness={0.6}
+            metalness={0.2}
+            emissive={entity.color}
+            emissiveIntensity={isSelected ? 0.3 : 0}
           />
-          <group position={[0, height / 2 + 0.5, 0]}>
-            <EntityTooltip entity={entity} />
-          </group>
-        </>
+          {isSelected && (
+            <Edges
+              scale={1.05}
+              threshold={15}
+              color="yellow"
+            />
+          )}
+        </mesh>
       )}
-    </mesh>
+      
+      {/* Tooltip always shown when selected */}
+      {isSelected && (
+        <group position={[0, height / 2 + 0.5, 0]}>
+          <EntityTooltip entity={entity} />
+        </group>
+      )}
+    </group>
   );
 };

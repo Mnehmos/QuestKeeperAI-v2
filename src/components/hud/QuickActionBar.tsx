@@ -6,8 +6,7 @@ import { useGameStateStore } from '../../stores/gameStateStore';
 
 /**
  * Bottom action bar for quick intent buttons.
- * Connects to chatStore.setPrefillInput to inject text into ChatInput.
- * Context-aware: disables "End Turn" if not player's turn.
+ * Terminal-styled configuration.
  */
 export const QuickActionBar: React.FC = () => {
     const toggleInventory = useHudStore(s => s.toggleInventory);
@@ -22,10 +21,7 @@ export const QuickActionBar: React.FC = () => {
     const isPlayerTurn = React.useMemo(() => {
         if (!activeEncounterId || !activeCharacter) return false;
         const currentEntity = entities.find(e => e.isCurrentTurn);
-        // Robust check: match by ID (preferred) or Name
         return currentEntity?.name === activeCharacter.name; 
-        // Note: activeCharacterId would be better if strictly mapped, 
-        // but Name is consistent in this app's architecture for single-player.
     }, [activeEncounterId, entities, activeCharacter]);
 
     const handleAction = (text: string) => {
@@ -33,10 +29,10 @@ export const QuickActionBar: React.FC = () => {
     };
     
     return (
-        <div className="flex gap-2 p-2 bg-black/60 rounded-xl backdrop-blur-md border border-white/10 animate-fade-in-up">
+        <div className="flex gap-2 p-2 bg-black/90 rounded-sm border-t border-x border-green-900/50 shadow-2xl animate-fade-in-up">
             <ActionButton label="Inventory" icon="🎒" onClick={toggleInventory} />
-            <ActionButton label="Melee Attack" icon="⚔️" onClick={() => handleAction("I attack with my weapon")} />
-            <ActionButton label="Cast Spell" icon="🔮" onClick={() => handleAction("I cast ")} />
+            <ActionButton label="Melee" icon="⚔️" onClick={() => handleAction("I attack with my weapon")} />
+            <ActionButton label="Cast" icon="🔮" onClick={() => handleAction("I cast ")} />
             <ActionButton 
                 label="End Turn" 
                 icon="⏳" 
@@ -62,16 +58,17 @@ const ActionButton: React.FC<ActionButtonProps> = ({ label, icon, onClick, secon
       disabled={disabled}
       className={`
         flex flex-col items-center justify-center
-        w-20 h-16 rounded-lg transition-all
+        w-20 h-14 rounded-sm transition-all border font-mono
         ${disabled 
-            ? 'opacity-30 cursor-not-allowed bg-gray-800 border-gray-700' 
+            ? 'opacity-30 cursor-not-allowed bg-gray-900 border-gray-800 text-gray-600' 
             : secondary 
-                ? 'bg-red-900/40 hover:bg-red-800/60 border border-red-500/30 active:scale-95' 
-                : 'bg-white/5 hover:bg-white/10 border border-white/10 active:scale-95'
+                ? 'bg-red-900/10 hover:bg-red-900/30 border-red-900/30 text-red-500' 
+                : 'bg-green-900/10 hover:bg-green-900/30 border-green-900/30 text-green-500 hover:text-green-300'
         }
+        active:scale-95
       `}
     >
-        <span className="text-2xl mb-1">{icon}</span>
-        <span className="text-[10px] font-bold text-white/80 uppercase tracking-tight">{label}</span>
+        <span className="text-xl mb-1 filter drop-shadow-md">{icon}</span>
+        <span className="text-[9px] font-bold uppercase tracking-wider">{label}</span>
     </button>
 );

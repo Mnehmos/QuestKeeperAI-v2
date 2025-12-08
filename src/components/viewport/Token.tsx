@@ -205,11 +205,7 @@ export const Token: React.FC<TokenProps> = ({ entity, isSelected }) => {
       )}
       
       {/* Tooltip always shown when selected */}
-      {isSelected && (
-        <group position={[0, height / 2 + 0.5, 0]}>
-          <EntityTooltip entity={entity} />
-        </group>
-      )}
+      {/* Tooltip removed - replaced by CharacterQuickView HUD */}
     </group>
   );
 };

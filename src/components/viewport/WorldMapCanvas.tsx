@@ -673,6 +673,25 @@ export const WorldMapCanvas: React.FC = () => {
     };
   }, [tileData, zoom, offset, containerSize]);
 
+  // Check for no worlds FIRST - don't show loading if there are no worlds
+  if (worlds.length === 0) {
+    return (
+      <div className="h-full w-full flex items-center justify-center font-mono text-terminal-green">
+        <div className="text-center max-w-md">
+          <div className="text-6xl mb-4">🌍</div>
+          <div className="text-xl mb-4">No Worlds Available</div>
+          <div className="text-sm text-terminal-green/70 mb-4">
+            Create a new world to explore!
+          </div>
+          <div className="text-xs text-terminal-green/50 space-y-2">
+            <p>Type <code className="bg-terminal-green/20 px-2 py-1 rounded">/new</code> in chat</p>
+            <p>to start the Campaign Setup wizard and generate a world.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="h-full w-full flex items-center justify-center font-mono text-terminal-green">
@@ -729,10 +748,40 @@ export const WorldMapCanvas: React.FC = () => {
   }
 
   if (!tileData) {
+    // Check if there are no worlds at all vs just no data loaded
+    const noWorlds = worlds.length === 0;
+    
     return (
       <div className="h-full w-full flex items-center justify-center font-mono text-terminal-green">
-        <div className="text-center text-terminal-green/60">
-          No world map data available
+        <div className="text-center max-w-md">
+          <div className="text-6xl mb-4">🌍</div>
+          {noWorlds ? (
+            <>
+              <div className="text-xl mb-4">No Worlds Available</div>
+              <div className="text-sm text-terminal-green/70 mb-4">
+                Create a new world to explore!
+              </div>
+              <div className="text-xs text-terminal-green/50 space-y-2">
+                <p>Type <code className="bg-terminal-green/20 px-2 py-1 rounded">/new</code> in chat</p>
+                <p>to start the Campaign Setup wizard and generate a world.</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-xl mb-4">No World Map Data</div>
+              <div className="text-sm text-terminal-green/70 mb-4">
+                Select a world from the dropdown or generate new map data.
+              </div>
+              {activeWorldId && (
+                <button
+                  onClick={() => fetchTileData(activeWorldId)}
+                  className="px-4 py-2 bg-terminal-green text-terminal-black font-bold uppercase hover:bg-terminal-green-bright transition-colors"
+                >
+                  🗺️ Load Map
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
     );

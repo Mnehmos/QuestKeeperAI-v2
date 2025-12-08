@@ -11,11 +11,22 @@ interface UIState {
   toggleSidebar: () => void;
   setTheme: (theme: Theme) => void;
 
-  // Modals
+  // Character Creation Modal
   showCharacterModal: boolean;
   characterModalCallback: ((characterId: string) => void) | null;
   openCharacterModal: (callback?: (characterId: string) => void) => void;
   closeCharacterModal: () => void;
+  
+  // Campaign Wizard Modal
+  showCampaignWizard: boolean;
+  campaignWizardCallback: ((sessionId: string, initialPrompt: string) => void) | null;
+  openCampaignWizard: (callback?: (sessionId: string, initialPrompt: string) => void) => void;
+  closeCampaignWizard: () => void;
+  
+  // Session Manager Modal
+  showSessionManager: boolean;
+  openSessionManager: () => void;
+  closeSessionManager: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -24,12 +35,15 @@ export const useUIStore = create<UIState>((set) => ({
   theme: 'green',
   showCharacterModal: false,
   characterModalCallback: null,
+  showCampaignWizard: false,
+  campaignWizardCallback: null,
+  showSessionManager: false,
 
   setActiveTab: (activeTab) => set({ activeTab }),
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   setTheme: (theme) => set({ theme }),
 
-  // Modal Actions
+  // Character Modal Actions
   openCharacterModal: (callback) => set({ 
     showCharacterModal: true, 
     characterModalCallback: callback || null 
@@ -38,4 +52,18 @@ export const useUIStore = create<UIState>((set) => ({
     showCharacterModal: false, 
     characterModalCallback: null 
   }),
+  
+  // Campaign Wizard Actions
+  openCampaignWizard: (callback) => set({
+    showCampaignWizard: true,
+    campaignWizardCallback: callback || null
+  }),
+  closeCampaignWizard: () => set({
+    showCampaignWizard: false,
+    campaignWizardCallback: null
+  }),
+  
+  // Session Manager Actions
+  openSessionManager: () => set({ showSessionManager: true }),
+  closeSessionManager: () => set({ showSessionManager: false }),
 }));

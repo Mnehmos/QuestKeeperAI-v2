@@ -118,22 +118,48 @@ const QuickStats = () => {
                                 Select World
                             </label>
                             {worlds.length > 0 ? (
-                                <select
-                                    value={activeWorldId || ''}
-                                    onChange={(e) => {
-                                        setActiveWorldId(e.target.value || null);
-                                        useGameStateStore.getState().syncState(true);
-                                    }}
-                                    className="w-full bg-black border border-terminal-green text-terminal-green text-sm px-3 py-2 rounded focus:outline-none focus:border-terminal-green-bright"
-                                >
-                                    {worlds.map((w: any) => (
-                                        <option key={w.id} value={w.id}>
-                                            {w.name} ({w.width}x{w.height})
-                                        </option>
-                                    ))}
-                                </select>
+                                <div className="flex gap-2 min-w-0">
+                                    <select
+                                        value={activeWorldId || ''}
+                                        onChange={(e) => {
+                                            setActiveWorldId(e.target.value || null);
+                                            useGameStateStore.getState().syncState(true);
+                                        }}
+                                        className="flex-1 min-w-0 bg-black border border-terminal-green text-terminal-green text-xs px-2 py-1 rounded focus:outline-none focus:border-terminal-green-bright truncate"
+                                    >
+                                        {worlds.map((w: any) => (
+                                            <option key={w.id} value={w.id}>
+                                                {w.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        onClick={async () => {
+                                            const selectedWorld = worlds.find((w: any) => w.id === activeWorldId);
+                                            if (selectedWorld && confirm(`Delete world "${selectedWorld.name}"? This cannot be undone.`)) {
+                                                try {
+                                                    const { mcpManager } = await import('../../services/mcpClient');
+                                                    await mcpManager.gameStateClient.callTool('delete_world', { id: activeWorldId });
+                                                    await useGameStateStore.getState().syncState(true);
+                                                } catch (e) {
+                                                    console.error('Failed to delete world:', e);
+                                                    alert('Failed to delete world');
+                                                }
+                                            }
+                                        }}
+                                        className="shrink-0 px-2 py-1 bg-red-900/30 border border-red-500/50 text-red-400 text-xs rounded hover:bg-red-900/50 transition-colors"
+                                        title="Delete selected world"
+                                    >
+                                        🗑️
+                                    </button>
+                                </div>
                             ) : (
-                                <div className="text-terminal-green/70 text-xs">No worlds loaded.</div>
+                                <div className="text-terminal-green/70 text-xs space-y-1">
+                                    <div>No worlds available.</div>
+                                    <div className="text-terminal-green/50">
+                                        Type <code className="bg-terminal-green/20 px-1 rounded">/new</code> in chat to create a campaign with a new world.
+                                    </div>
+                                </div>
                             )}
                         </div>
 

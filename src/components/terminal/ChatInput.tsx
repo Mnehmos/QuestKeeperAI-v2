@@ -282,15 +282,67 @@ export const ChatInput: React.FC = () => {
         const tools = result?.tools || [];
         return { content: formatToolsOutput(tools) };
       }
+      
+      // === SESSION MANAGEMENT COMMANDS ===
+      case 'new': {
+        // Launch the Campaign Setup Wizard
+        return new Promise((resolve) => {
+          uiStore.openCampaignWizard((sessionId, initialPrompt) => {
+            // After wizard completes, trigger the LLM with the initial prompt
+            setTimeout(() => {
+              submitToLLM(initialPrompt);
+            }, 100);
+            resolve({ content: `🎭 **New Campaign Started!** Session ID: \`${sessionId}\`\n\nGenerating opening scene...` });
+          });
+        });
+      }
+      
+      case 'start': {
+        // Resume last session or launch wizard if no sessions exist
+        const sessionStore = (await import('../../stores/sessionStore')).useSessionStore.getState();
+        const sessions = sessionStore.sessions;
+        
+        if (sessions.length > 0) {
+          // Resume the most recently played session
+          const lastSession = sessions.reduce((a, b) => 
+            a.lastPlayedAt > b.lastPlayedAt ? a : b
+          );
+          await sessionStore.switchSession(lastSession.id);
+          return { 
+            content: `🎮 **Resuming Campaign:** ${lastSession.name}\n\n📍 ${lastSession.snapshot.locationName}\n👥 ${lastSession.snapshot.partyName} (Lvl ${lastSession.snapshot.level})\n\nType anything to continue your adventure!`
+          };
+        } else {
+          // No sessions exist - launch wizard
+          return new Promise((resolve) => {
+            uiStore.openCampaignWizard((_sessionId, initialPrompt) => {
+              setTimeout(() => {
+                submitToLLM(initialPrompt);
+              }, 100);
+              resolve({ content: `🎭 **New Campaign Created!**\n\nGenerating opening scene...` });
+            });
+          });
+        }
+      }
+      
+      case 'session': {
+        uiStore.openSessionManager();
+        return { content: `📂 **Session Manager opened.** Select a campaign to switch or manage.` };
+      }
   
       case 'help': {
         return {
           content: `## Quest Keeper AI Commands:
   
+  ### 📂 Sessions & Campaigns
+  | Command | Description |
+  |---------|-------------|
+  | \`/start\` | Resume last session or create new campaign |
+  | \`/new\` | Create a new campaign with setup wizard |
+  | \`/session\` | Open session manager to switch campaigns |
+  
   ### 📡 System
   | Command | Description |
   |---------|-------------|
-  | \`/start\` | Create a new character and begin adventure |
   | \`/test\` | Test MCP server connection |
   | \`/status\` | Show current game state summary |
   | \`/sync\` | Force sync all state from server |

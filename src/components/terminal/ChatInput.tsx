@@ -920,16 +920,30 @@ export const ChatInput: React.FC = () => {
 
   return (
     <form onSubmit={handleSubmit} className="p-4 border-t border-terminal-green-dim bg-terminal-black">
-      <div className="flex gap-2 items-center">
-        <div className="flex-grow flex items-center bg-terminal-black border border-terminal-green-dim p-2">
-          <span className="text-terminal-green mr-2 font-bold">{'>'}</span>
-          <input
-            type="text"
+      <div className="flex gap-2 items-end">
+        <div className="flex-grow flex items-start bg-terminal-black border border-terminal-green-dim p-2">
+          <span className="text-terminal-green mr-2 font-bold mt-1">{'>'}</span>
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter submits, Shift+Enter adds newline
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit(e as unknown as React.FormEvent);
+              }
+            }}
             disabled={isLoading}
-            placeholder={isLoading ? "PROCESSING..." : "ENTER_COMMAND..."}
-            className="flex-grow bg-transparent focus:outline-none text-terminal-green placeholder-terminal-green/30 font-mono disabled:opacity-50"
+            placeholder={isLoading ? "PROCESSING..." : "ENTER_COMMAND... (Shift+Enter for new line)"}
+            className="flex-grow bg-transparent focus:outline-none text-terminal-green placeholder-terminal-green/30 font-mono disabled:opacity-50 resize-none min-h-[24px] max-h-[200px]"
+            rows={1}
+            style={{ height: 'auto', overflow: 'hidden' }}
+            onInput={(e) => {
+              // Auto-resize textarea
+              const target = e.target as HTMLTextAreaElement;
+              target.style.height = 'auto';
+              target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+            }}
           />
         </div>
         <button

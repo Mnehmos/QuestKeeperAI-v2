@@ -78,6 +78,7 @@ export const SettingsView: React.FC = () => {
                                             <option value="gpt-5.1">GPT-5.1</option>
                                             <option value="gpt-5-pro">GPT-5 Pro</option>
                                             <option value="gpt-5-mini">GPT-5 Mini</option>
+                                            <option value="gpt-5-nano">GPT-5 Nano</option>
                                         </optgroup>
                                         <optgroup label="Reasoning">
                                             <option value="o4-mini">o4-mini</option>
@@ -107,6 +108,7 @@ export const SettingsView: React.FC = () => {
                                             <option value="anthropic/claude-haiku-4.5">Claude Haiku 4.5</option>
                                             <option value="anthropic/claude-sonnet-4.5">Claude Sonnet 4.5</option>
                                             <option value="openai/gpt-5.1">GPT-5.1</option>
+                                            <option value="openai/gpt-5-nano">GPT-5 Nano</option>
                                             <option value="google/gemini-3-pro">Gemini 3 Pro</option>
                                         </optgroup>
                                     </>
@@ -124,7 +126,19 @@ export const SettingsView: React.FC = () => {
 
                     {/* System Prompt */}
                     <div className="space-y-2">
-                        <label className="block text-sm font-bold text-terminal-green">SYSTEM PROMPT</label>
+                        <div className="flex justify-between items-center">
+                            <label className="block text-sm font-bold text-terminal-green">SYSTEM PROMPT</label>
+                            <button
+                                onClick={() => {
+                                    // Clear settings and reload to get fresh default
+                                    localStorage.removeItem('quest-keeper-settings');
+                                    window.location.reload();
+                                }}
+                                className="text-xs px-2 py-1 border border-terminal-green/50 text-terminal-green/70 rounded hover:bg-terminal-green/20 hover:text-terminal-green transition-colors"
+                            >
+                                🔄 Reset to Default
+                            </button>
+                        </div>
                         <textarea
                             value={systemPrompt}
                             onChange={(e) => setSystemPrompt(e.target.value)}

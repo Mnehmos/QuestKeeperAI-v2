@@ -66,7 +66,6 @@ export const WorldGenerationModal: React.FC<WorldGenerationModalProps> = ({
   const [progress, setProgress] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [finalWorldId, setFinalWorldId] = useState<string | null>(null);
   
   const logIdRef = useRef(0);
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -185,7 +184,7 @@ Description: [one atmospheric sentence]`;
           throw new Error('No world ID returned from generate_world');
         }
         
-        setFinalWorldId(worldId);
+        // worldId is used directly in onComplete callback
         addLog(`World created with ID: ${worldId.slice(0, 8)}...`, 'success');
         
         // generate_world only returns structure COUNT, not array
@@ -299,7 +298,7 @@ Description: [one atmospheric sentence]`;
       setCurrentPhase(0);
       setLogs([]);
       setProgress(0);
-      setFinalWorldId(null);
+
       setError(null);
       setIsGenerating(false);
       abortRef.current = true;

@@ -57,3 +57,6 @@ aux
 
 # Developer-only agent orchestration docs (not for version control)
 Agents/
+src/components/session/CampaignSetupWizard.tsx
+src/components/session/WorldGenerationModal.tsx
+src-tauri/rpg.db

@@ -5,10 +5,17 @@ import { AuraListPanel } from './AuraListPanel';
 import { InventoryDrawer } from './InventoryDrawer';
 import { CharacterQuickView } from './CharacterQuickView';
 import { QuickActionBar } from './QuickActionBar';
+import { RestPanel } from './RestPanel';
+import { LootPanel } from './LootPanel';
 import { useCombatStore } from '../../stores/combatStore';
+import { useHudStore } from '../../stores/hudStore';
 
 export const CombatHUD: React.FC = () => {
   const activeEncounterId = useCombatStore(s => s.activeEncounterId);
+  const isRestPanelOpen = useHudStore(s => s.isRestPanelOpen);
+  const toggleRestPanel = useHudStore(s => s.toggleRestPanel);
+  const isLootPanelOpen = useHudStore(s => s.isLootPanelOpen);
+  const toggleLootPanel = useHudStore(s => s.toggleLootPanel);
   
   // If no combat, maybe show a minimal exploration HUD?
   // For now, these components can handle their own "empty" states or we hide them
@@ -36,6 +43,10 @@ export const CombatHUD: React.FC = () => {
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto">
         <QuickActionBar />
       </div>
+
+      {/* Modals */}
+      <RestPanel isOpen={isRestPanelOpen} onClose={toggleRestPanel} />
+      <LootPanel isOpen={isLootPanelOpen} onClose={toggleLootPanel} />
     </div>
   );
 };

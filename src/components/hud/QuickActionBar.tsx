@@ -10,6 +10,8 @@ import { useGameStateStore } from '../../stores/gameStateStore';
  */
 export const QuickActionBar: React.FC = () => {
     const toggleInventory = useHudStore(s => s.toggleInventory);
+    const toggleRestPanel = useHudStore(s => s.toggleRestPanel);
+    const toggleLootPanel = useHudStore(s => s.toggleLootPanel);
     const setPrefillInput = useChatStore(s => s.setPrefillInput);
     
     // Combat Context
@@ -24,6 +26,8 @@ export const QuickActionBar: React.FC = () => {
         return currentEntity?.name === activeCharacter.name; 
     }, [activeEncounterId, entities, activeCharacter]);
 
+    const isInCombat = !!activeEncounterId;
+
     const handleAction = (text: string) => {
         setPrefillInput(text);
     };
@@ -33,6 +37,15 @@ export const QuickActionBar: React.FC = () => {
             <ActionButton label="Inventory" icon="🎒" onClick={toggleInventory} />
             <ActionButton label="Melee" icon="⚔️" onClick={() => handleAction("I attack with my weapon")} />
             <ActionButton label="Cast" icon="🔮" onClick={() => handleAction("I cast ")} />
+            {isInCombat && (
+                <ActionButton label="Loot" icon="💀" onClick={toggleLootPanel} />
+            )}
+            <ActionButton 
+                label="Rest" 
+                icon="⛺" 
+                onClick={toggleRestPanel} 
+                disabled={isInCombat}
+            />
             <ActionButton 
                 label="End Turn" 
                 icon="⏳" 

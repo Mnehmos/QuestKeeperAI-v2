@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { dnd5eItems } from '../data/dnd5eItems';
+import { getNextLevelXp } from '../data/xpTable';
 import { parseMcpResponse, executeBatchToolCalls, debounce } from '../utils/mcpUtils';
 
 export interface InventoryItem {
@@ -232,7 +233,8 @@ function parseCharacterFromJson(char: any): CharacterStats | null {
     if (!char || !char.name) return null;
 
     const level = char.level || 1;
-    const xpForNextLevel = level * 1000;
+    const currentXp = char.xp ?? char.experience ?? 0;
+    const xpForNextLevel = getNextLevelXp(level);
 
     // Parse conditions if present
     const conditions: CharacterCondition[] = [];
@@ -274,7 +276,7 @@ function parseCharacterFromJson(char: any): CharacterStats | null {
         max: char.maxHp || char.hp || 0
       },
       xp: {
-        current: char.experience || 0,
+        current: currentXp,
         max: xpForNextLevel
       },
       stats: {

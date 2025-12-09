@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { CreatureSize, findNearestOpenTile, getElevationAt } from '../utils/gridHelpers';
 import { mcpManager } from '../services/mcpClient';
 import { useGameStateStore } from './gameStateStore';
+import { useChatStore } from './chatStore';
 import { parseMcpResponse, debounce } from '../utils/mcpUtils';
 
 export type Vector3 = { x: number; y: number; z: number };
@@ -185,6 +186,10 @@ interface CombatState {
   addAura: (aura: Aura) => void;
   removeAura: (id: string) => void;
   syncAuras: () => Promise<void>;
+  
+  // Auto-skip logic
+  consecutiveSkips: number;
+  checkAutoSkipTurn: () => Promise<void>;
 }
 
 const MOCK_ENTITIES: Entity[] = [];
@@ -585,7 +590,9 @@ export const useCombatStore = create<CombatState>((set, get) => ({
   measureMode: false,
   measureStart: null,
   measureEnd: null,
+  measureEnd: null,
   cursorPosition: null,
+  consecutiveSkips: 0,
 
   addEntity: (entity) => set((state) => ({
     entities: [...state.entities, entity]
@@ -700,7 +707,7 @@ export const useCombatStore = create<CombatState>((set, get) => ({
     }
   },
 
-  syncCombatState: async () => {
+  syncCombatState: async (force = false) => {
     const { activeEncounterId, isSyncing, lastSyncTime } = get();
     
     // Prevent concurrent syncs and rate limit
@@ -709,7 +716,7 @@ export const useCombatStore = create<CombatState>((set, get) => ({
     }
     
     const now = Date.now();
-    if (now - lastSyncTime < 1000) {
+    if (!force && now - lastSyncTime < 1000) {
       return;
     }
     
@@ -738,6 +745,11 @@ export const useCombatStore = create<CombatState>((set, get) => ({
         
         // Use the new updateFromStateJson method
         get().updateFromStateJson(data);
+
+        // Check if we need to auto-skip the current turn (if dead)
+        // We do this AFTER updating state so we know who is currently up
+        setTimeout(() => get().checkAutoSkipTurn(), 100);
+
       } else if (typeof data === 'string') {
         // Fallback: check if it's text with embedded JSON
         const embedded = extractEmbeddedStateJson(data);
@@ -798,6 +810,64 @@ export const useCombatStore = create<CombatState>((set, get) => ({
   setMeasureStart: (pos) => set({ measureStart: pos }),
   setMeasureEnd: (pos) => set({ measureEnd: pos }),
   setCursorPosition: (pos) => set({ cursorPosition: pos }),
+  
+  checkAutoSkipTurn: async () => {
+    const { activeEncounterId, currentTurnName, entities, consecutiveSkips, syncCombatState } = get();
+
+    if (!activeEncounterId || !currentTurnName) return;
+
+    const currentEntity = entities.find(e => e.name === currentTurnName);
+    if (!currentEntity) return;
+
+    // Check if dead (HP <= 0)
+    // Note: Some systems allow negative HP, but typically 0 is downed/dead in 5e for most tools here.
+    const hp = currentEntity.metadata.hp.current;
+    
+    if (hp <= 0) {
+        console.log(`[checkAutoSkipTurn] ${currentTurnName} is dead (HP ${hp}). Auto-skipping.`);
+        
+        if (consecutiveSkips >= 10) {
+            console.warn('[checkAutoSkipTurn] Infinite loop protection triggered. Stopping auto-skip.');
+            useChatStore.getState().addMessage({
+                id: Date.now().toString(),
+                sender: 'system',
+                content: `⚠️ Auto-skip stopped: Too many consecutive skips (>10). Please check combat state.`,
+                timestamp: Date.now(),
+                type: 'error'
+            });
+            // Reset to avoid getting stuck forever if manual intervention happens
+             set({ consecutiveSkips: 0 });
+            return;
+        }
+
+        // Increment skips
+        set({ consecutiveSkips: consecutiveSkips + 1 });
+
+        // Notify user
+        useChatStore.getState().addMessage({
+            id: Date.now().toString(),
+            sender: 'system',
+            content: `💀 ${currentTurnName} is incapacitated. Skipping turn...`,
+            timestamp: Date.now(),
+            type: 'info'
+        });
+
+        // Trigger next turn
+        try {
+             await mcpManager.combatClient.callTool('next_turn', { encounterId: activeEncounterId });
+             // Force immediate sync to process next turn
+             await syncCombatState(true);
+        } catch (e) {
+            console.error('Failed to auto-skip turn', e);
+        }
+
+    } else {
+        // Reset skips if we found a living entity
+        if (consecutiveSkips > 0) {
+             set({ consecutiveSkips: 0 });
+        }
+    }
+  }
 
   // Aura management
   setAuras: (auras) => set({ auras }),

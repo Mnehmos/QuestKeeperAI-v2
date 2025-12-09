@@ -27,6 +27,18 @@ dist-ssr
 src-tauri/target/
 src-tauri/gen/
 
+# MCP Server binaries (transpiled from rpg-mcp, deployed at runtime)
+# Keep only the native sqlite module and entry point
+src-tauri/binaries/server/
+src-tauri/binaries/storage/
+src-tauri/binaries/dsl/
+src-tauri/binaries/worldgen/
+src-tauri/binaries/workflow/
+src-tauri/binaries/*.js
+src-tauri/binaries/*.d.ts
+src-tauri/binaries/*.js.map
+src-tauri/binaries/*.d.ts.map
+
 # Rust experiment (not part of main codebase)
 rust-mcp-server/
 

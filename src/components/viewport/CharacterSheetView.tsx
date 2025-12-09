@@ -7,6 +7,8 @@ import { SpellBookView } from '../character/SpellBookView';
 import { ConditionsDisplay } from '../character/ConditionsDisplay';
 import CustomEffectsDisplay from '../character/CustomEffectsDisplay';
 import { ConcentrationIndicator } from '../character/ConcentrationIndicator';
+import { XPBar } from '../common/XPBar';
+import { LevelUpModal } from '../character/LevelUpModal';
 
 // Armor type categories for AC calculation
 type ArmorCategory = 'light' | 'medium' | 'heavy' | 'none';
@@ -97,6 +99,7 @@ function calculateAC(
 export const CharacterSheetView: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false);
+  const [showLevelUpModal, setShowLevelUpModal] = useState(false);
   const [viewTab, setViewTab] = useState<'stats' | 'spells' | 'effects'>('stats');
 
   const activeCharacter = useGameStateStore(state => state.activeCharacter);
@@ -271,19 +274,22 @@ export const CharacterSheetView: React.FC = () => {
               <span className="text-terminal-green/60">/{hp.max}</span>
             </div>
             <div>
-              <span className="text-sm text-terminal-green/60 mr-2">XP</span>
-              <span className="text-xl">{xp.current}</span>
-              <span className="text-terminal-green/60 text-sm"> / {xp.max}</span>
+              <XPBar 
+                current={xp.current} 
+                max={xp.max} 
+                level={level} 
+                showLabels={true}
+              />
+              {xp.current >= xp.max && level < 20 && (
+                <button
+                  onClick={() => setShowLevelUpModal(true)}
+                  className="mt-2 w-full text-xs bg-terminal-green text-terminal-black font-bold py-1 px-2 rounded animate-pulse hover:bg-terminal-green-bright transition-colors"
+                >
+                  ✨ LEVEL UP AVAILABLE
+                </button>
+              )}
             </div>
           </div>
-        </div>
-
-        {/* HP Bar */}
-        <div className="mt-4 w-full h-4 bg-terminal-green/10 border border-terminal-green/30 relative">
-          <div
-            className="h-full bg-terminal-green transition-all duration-500"
-            style={{ width: `${Math.min((hp.current / hp.max) * 100, 100)}%` }}
-          />
         </div>
 
         {/* Concentration Indicator (if active) */}
@@ -572,6 +578,16 @@ export const CharacterSheetView: React.FC = () => {
         isDanger={true}
         isLoading={isLoading}
       />
+      
+      {activeCharacterId && (
+        <LevelUpModal
+          isOpen={showLevelUpModal}
+          onClose={() => setShowLevelUpModal(false)}
+          characterId={activeCharacterId}
+          characterName={name}
+          currentLevel={level}
+        />
+      )}
     </>
   );
 };

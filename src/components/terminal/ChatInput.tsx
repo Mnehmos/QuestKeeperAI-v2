@@ -392,6 +392,16 @@ export const ChatInput: React.FC = () => {
   | \`/adv <expr>\` | Roll with advantage |
   | \`/dis <expr>\` | Roll with disadvantage |
   
+  ### 📊 Skill Checks
+  | Command | Description |
+  |---------|-------------|
+  | \`/perception\` | Perception check (uses active character) |
+  | \`/stealth\` | Stealth check |
+  | \`/athletics\` | Athletics check (all 18 skills supported) |
+  | \`/str\`, \`/dex\`, etc. | Raw ability check |
+  | \`/save dex\` | Saving throw (e.g., DEX save) |
+  | Add \`adv\` or \`dis\` | Roll with advantage/disadvantage |
+  
   ### 🔒 Secret Keeper
   | Command | Description |
   |---------|-------------|
@@ -882,6 +892,174 @@ export const ChatInput: React.FC = () => {
         return { content: `Switched to **${tab}** tab`, type: 'success' };
       }
   
+      // === SKILL CHECK COMMANDS ===
+      case 'perception':
+      case 'stealth':
+      case 'athletics':
+      case 'acrobatics':
+      case 'arcana':
+      case 'history':
+      case 'investigation':
+      case 'nature':
+      case 'religion':
+      case 'insight':
+      case 'medicine':
+      case 'survival':
+      case 'deception':
+      case 'intimidation':
+      case 'performance':
+      case 'persuasion':
+      case 'animal_handling':
+      case 'sleight_of_hand': {
+        const charId = gameState.activeCharacter?.id;
+        if (!charId) return { content: `No active character. Select a character first.`, type: 'error' };
+        
+        // Parse optional advantage/disadvantage from args
+        const argLower = args.trim().toLowerCase();
+        const advantage = argLower.includes('adv') || argLower.includes('advantage');
+        const disadvantage = argLower.includes('dis') || argLower.includes('disadvantage');
+        
+        try {
+          const result = await mcpManager.gameStateClient.callTool('roll_skill_check', { 
+            characterId: charId,
+            skill: command.replace('-', '_'), // Convert kebab-case to snake_case
+            advantage,
+            disadvantage
+          });
+          const text = result?.content?.[0]?.text || '{}';
+          const data = JSON.parse(text);
+          
+          const skillName = command.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          let output = `## 🎲 ${skillName} Check\n\n`;
+          output += `**${data.character}** rolls: **${data.roll}**\n\n`;
+          output += `| d20 | ${data.breakdown?.abilityMod >= 0 ? '+' : ''}${data.breakdown?.abilityMod || 0} | Prof ${data.breakdown?.proficiencyBonus || 0} | = **${data.roll}** |\n`;
+          output += `|-----|-----|------|-------|\n\n`;
+          if (data.proficient) output += `✓ Proficient${data.expertise ? ' (Expertise x2)' : ''}\n`;
+          if (advantage) output += `⬆️ Advantage\n`;
+          if (disadvantage) output += `⬇️ Disadvantage\n`;
+          
+          return { content: output };
+        } catch (error: any) {
+          return { content: `Skill check error: ${error.message}`, type: 'error' };
+        }
+      }
+
+      // Ability check shortcuts
+      case 'str':
+      case 'dex':
+      case 'con':
+      case 'int':
+      case 'wis':
+      case 'cha': {
+        const charId = gameState.activeCharacter?.id;
+        if (!charId) return { content: `No active character. Select a character first.`, type: 'error' };
+        
+        const argLower = args.trim().toLowerCase();
+        const advantage = argLower.includes('adv');
+        const disadvantage = argLower.includes('dis');
+        
+        try {
+          const result = await mcpManager.gameStateClient.callTool('roll_ability_check', { 
+            characterId: charId,
+            ability: command,
+            advantage,
+            disadvantage
+          });
+          const text = result?.content?.[0]?.text || '{}';
+          const data = JSON.parse(text);
+          
+          let output = `## 🎲 ${command.toUpperCase()} Check\n\n`;
+          output += `**${data.character}** rolls: **${data.roll}**\n`;
+          
+          return { content: output };
+        } catch (error: any) {
+          return { content: `Ability check error: ${error.message}`, type: 'error' };
+        }
+      }
+
+      // Saving throw command
+      case 'save': {
+        const charId = gameState.activeCharacter?.id;
+        if (!charId) return { content: `No active character. Select a character first.`, type: 'error' };
+        
+        const parts = args.trim().toLowerCase().split(/\s+/);
+        const ability = parts[0];
+        if (!['str', 'dex', 'con', 'int', 'wis', 'cha'].includes(ability)) {
+          return { content: `Usage: \`/save <ability>\` (e.g., \`/save dex\`)`, type: 'error' };
+        }
+        
+        const advantage = parts.includes('adv');
+        const disadvantage = parts.includes('dis');
+        
+        try {
+          const result = await mcpManager.gameStateClient.callTool('roll_saving_throw', { 
+            characterId: charId,
+            ability,
+            advantage,
+            disadvantage
+          });
+          const text = result?.content?.[0]?.text || '{}';
+          const data = JSON.parse(text);
+          
+          let output = `## 🛡️ ${ability.toUpperCase()} Saving Throw\n\n`;
+          output += `**${data.character}** rolls: **${data.roll}**\n`;
+          if (data.proficient) output += `\n✓ Save Proficiency`;
+          
+          return { content: output };
+        } catch (error: any) {
+          return { content: `Saving throw error: ${error.message}`, type: 'error' };
+        }
+      }
+
+      // Rest commands - open Rest Panel
+      case 'rest':
+      case 'camp': {
+        (await import('../../stores/hudStore')).useHudStore.getState().toggleRestPanel();
+        return { content: `⛺ **Rest Menu opened.** Choose Short Rest or Long Rest.` };
+      }
+
+      case 'shortrest': {
+        const charId = gameState.activeCharacter?.id;
+        if (!charId) return { content: `No active character.`, type: 'error' };
+        try {
+          const result = await mcpManager.gameStateClient.callTool('take_short_rest', { 
+            characterId: charId, 
+            hitDiceToSpend: 1 
+          });
+          const text = result?.content?.[0]?.text || '{}';
+          const data = JSON.parse(text);
+          await gameState.syncState();
+          return { content: `⛺ **${data.character}** takes a short rest. HP: ${data.previousHp} → ${data.newHp} (+${data.hpRestored})` };
+        } catch (error: any) {
+          return { content: `Rest failed: ${error.message}`, type: 'error' };
+        }
+      }
+
+      case 'longrest': {
+        const charId = gameState.activeCharacter?.id;
+        if (!charId) return { content: `No active character.`, type: 'error' };
+        try {
+          const result = await mcpManager.gameStateClient.callTool('take_long_rest', { 
+            characterId: charId 
+          });
+          const text = result?.content?.[0]?.text || '{}';
+          const data = JSON.parse(text);
+          await gameState.syncState();
+          let msg = `🌙 **${data.character}** takes a long rest. HP: ${data.previousHp} → ${data.newHp} (Full)`;
+          if (data.spellSlotsRestored) msg += `\n**Spell Slots:** Restored`;
+          return { content: msg };
+        } catch (error: any) {
+          return { content: `Rest failed: ${error.message}`, type: 'error' };
+        }
+      }
+
+      // Loot commands
+      case 'loot':
+      case 'corpses': {
+        (await import('../../stores/hudStore')).useHudStore.getState().toggleLootPanel();
+        return { content: `💀 **Loot Panel opened.** Click a corpse to view its inventory.` };
+      }
+
       default:
         return null; // Not a recognized command
     }

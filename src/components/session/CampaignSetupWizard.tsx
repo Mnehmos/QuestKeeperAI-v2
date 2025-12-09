@@ -12,7 +12,7 @@ import { PartyCreatorModal } from '../party/PartyCreatorModal';
 // Types
 // ============================================
 
-type WizardStep = 'details' | 'world' | 'party' | 'location' | 'launch';
+type WizardStep = 'selection' | 'details' | 'world' | 'party' | 'location' | 'launch';
 
 interface WizardState {
   campaignName: string;
@@ -64,24 +64,30 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
   const partyDetails = usePartyStore((state) => state.partyDetails);
   const unassignedCharacters = usePartyStore((state) => state.unassignedCharacters);
   const syncUnassignedCharacters = usePartyStore((state) => state.syncUnassignedCharacters);
+  const syncParties = usePartyStore((state) => state.syncParties);
   const createSession = useSessionStore((state) => state.createSession);
+  const sessions = useSessionStore((state) => state.sessions);
+  const switchSession = useSessionStore((state) => state.switchSession);
+  const deleteSession = useSessionStore((state) => state.deleteSession);
 
   // Party details are already available through partyDetails map
   // No need to fetch - the main view already loads them
   
-  // Sync unassigned characters when on party step
+  // Sync parties and unassigned characters when on party step
   useEffect(() => {
     if (isOpen && currentStep === 'party') {
+      syncParties();
       syncUnassignedCharacters();
     }
-  }, [isOpen, currentStep, syncUnassignedCharacters]);
+  }, [isOpen, currentStep, syncParties, syncUnassignedCharacters]);
 
   // Reset wizard only when modal OPENS, not when stores sync
   const [hasInitialized, setHasInitialized] = useState(false);
   
   useEffect(() => {
     if (isOpen && !hasInitialized) {
-      setCurrentStep('details');
+      // If sessions exist, start at selection screen. Otherwise, start new campaign flow.
+      setCurrentStep(sessions.length > 0 ? 'selection' : 'details');
       setWizardState({
         campaignName: '',
         description: '',
@@ -116,6 +122,9 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
   const goBack = () => {
     if (currentIndex > 0) {
       setCurrentStep(steps[currentIndex - 1]);
+    } else if (currentStep === 'details' && sessions.length > 0) {
+        // Allow going back to selection if we have sessions
+        setCurrentStep('selection');
     }
   };
 
@@ -179,7 +188,8 @@ Generate an immersive opening scene. Describe the environment, atmosphere, and a
           </button>
         </div>
 
-        {/* Progress Bar */}
+        {/* Progress Bar (Hidden on selection step) */}
+        {currentStep !== 'selection' && (
         <div className="px-4 py-2 border-b border-terminal-green/30">
           <div className="flex justify-between">
             {steps.map((step, idx) => (
@@ -201,9 +211,84 @@ Generate an immersive opening scene. Describe the environment, atmosphere, and a
             />
           </div>
         </div>
+        )}
 
         {/* Content */}
         <div className="p-6 min-h-[300px]">
+          {/* Step 0: Selection */}
+          {currentStep === 'selection' && (
+            <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-terminal-green">
+                        📂 Existing Campaigns
+                    </h3>
+                    <button
+                        onClick={() => setCurrentStep('details')}
+                        className="px-4 py-2 bg-terminal-green text-terminal-black rounded font-bold hover:bg-terminal-green-bright transition-colors"
+                    >
+                        + New Campaign
+                    </button>
+                </div>
+
+                <div className="grid gap-3 max-h-[400px] overflow-y-auto pr-2">
+                    {sessions.map((session) => (
+                        <div 
+                            key={session.id}
+                            className="bg-terminal-green/5 border border-terminal-green/30 rounded-lg p-4 hover:border-terminal-green transition-all"
+                        >
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h4 className="font-bold text-terminal-green text-lg mb-1">{session.name}</h4>
+                                    <p className="text-terminal-green/60 text-xs mb-3">
+                                        Last played: {new Date(session.lastPlayedAt).toLocaleDateString()} at {new Date(session.lastPlayedAt).toLocaleTimeString()}
+                                    </p>
+                                    
+                                    {/* Snapshot Badges */}
+                                    <div className="flex flex-wrap gap-2 text-xs">
+                                        <span className="px-2 py-1 bg-black/40 rounded text-terminal-green/80 border border-terminal-green/20">
+                                            🌍 {session.snapshot?.locationName || 'Unknown'}
+                                        </span>
+                                        <span className="px-2 py-1 bg-black/40 rounded text-terminal-green/80 border border-terminal-green/20">
+                                            👥 {session.snapshot?.memberCount || 0} Members
+                                        </span>
+                                        <span className="px-2 py-1 bg-black/40 rounded text-terminal-green/80 border border-terminal-green/20">
+                                            ⚔️ Lvl {session.snapshot?.level || 1}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <button 
+                                        onClick={async () => {
+                                            await switchSession(session.id);
+                                            onClose();
+                                        }}
+                                        className="px-4 py-2 bg-terminal-green/20 border border-terminal-green text-terminal-green rounded hover:bg-terminal-green hover:text-terminal-black transition-colors text-sm font-bold"
+                                    >
+                                        Resume
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            if (confirm(`Are you sure you want to delete "${session.name}"? This will delete all campaign data.`)) {
+                                                deleteSession(session.id);
+                                            }
+                                        }}
+                                        className="px-4 py-1 bg-red-900/10 border border-red-500/30 text-red-400 rounded hover:bg-red-900/30 transition-colors text-xs"
+                                    >
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {sessions.length === 0 && (
+                         <div className="text-center py-10 text-terminal-green/40 italic">
+                            No active campaigns found. Start a new adventure!
+                         </div>
+                    )}
+                </div>
+            </div>
+          )}
+
           {/* Step 1: Details */}
           {currentStep === 'details' && (
             <div className="space-y-4">
@@ -585,7 +670,6 @@ Generate an immersive opening scene. Describe the environment, atmosphere, and a
                       setIsGeneratingContext(true);
                       try {
                         const locationType = wizardState.startingLocationType;
-                        const locationName = wizardState.startingLocationName || locationType;
                         const partyName = selectedParty?.name || 'the adventuring party';
                         const characterName = selectedParty?.members.find(
                           m => m.characterId === wizardState.activeCharacterId
@@ -663,10 +747,10 @@ Be evocative and concise.`;
         {/* Footer Navigation */}
         <div className="border-t border-terminal-green p-4 flex justify-between">
           <button
-            onClick={currentIndex === 0 ? onClose : goBack}
+            onClick={currentIndex === 0 ? (sessions.length > 0 && currentStep === 'details' ? () => setCurrentStep('selection') : onClose) : goBack}
             className="px-4 py-2 border border-terminal-green/50 text-terminal-green/70 rounded hover:bg-terminal-green/10 transition-colors"
           >
-            {currentIndex === 0 ? 'Cancel' : '← Back'}
+            {currentIndex === 0 && (sessions.length === 0 || currentStep === 'selection') ? 'Cancel' : '← Back'}
           </button>
           
           {currentStep === 'launch' ? (

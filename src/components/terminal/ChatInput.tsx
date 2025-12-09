@@ -101,6 +101,17 @@ export const ChatInput: React.FC = () => {
     }
   }, [prefillInput, setPrefillInput]);
 
+  // Quick Command Dispatch - consume commands from sidebar buttons
+  const pendingCommand = useUIStore((state) => state.pendingCommand);
+  const clearPendingCommand = useUIStore((state) => state.clearPendingCommand);
+  
+  useEffect(() => {
+    if (pendingCommand) {
+      setInput(pendingCommand);
+      clearPendingCommand();
+    }
+  }, [pendingCommand, clearPendingCommand]);
+
   // Command Hints Rotation
   const COMMAND_HINTS = [
     "ENTER_COMMAND... (Shift+Enter for new line)",
@@ -869,33 +880,6 @@ export const ChatInput: React.FC = () => {
         if (!validTabs.includes(tab)) return { content: `Valid tabs: ${validTabs.join(', ')}`, type: 'error' };
         uiStore.setActiveTab(tab);
         return { content: `Switched to **${tab}** tab`, type: 'success' };
-      }
-  
-      case 'start': {
-        return new Promise<CommandResult>((resolve) => {
-          uiStore.openCharacterModal((characterId) => {
-            if (characterId) {
-               console.log('[ChatInput] Character created:', characterId);
-               
-               // 1. Success Message
-               addMessage({
-                  id: Date.now().toString(),
-                  sender: 'system',
-                  content: `**Character Created!**\n\nThe adventure awaits.`,
-                  timestamp: Date.now(),
-                  type: 'success'
-               });
-  
-               // 2. Clear history? (Optional, but maybe safer for a restart)
-               // useChatStore.getState().clearHistory(); // No, user might want to see the creation log
-  
-               // 3. Trigger LLM to start narration
-               // We send an "invisible" prompt via injectPrompt mechanism
-               submitToLLM("I have created my character. Please begin the adventure with an immersive opening scene, describing where I am and what I see. Use the 'Skyrim opening' style: distinctive, atmospheric, and establishing the immediate situation.");
-            }
-          });
-          resolve({ content: `**Character Creation Started**\n\nCreate your hero to begin your adventure!`, type: 'info' });
-        });
       }
   
       default:

@@ -3,7 +3,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { AdventureView } from '../adventure/AdventureView';
 import { BattlemapCanvas } from '../viewport/BattlemapCanvas';
 import { WorldMapCanvas } from '../viewport/WorldMapCanvas';
-import { NotesView } from '../viewport/NotesView';
+import { NpcJournalView } from '../viewport/NpcJournalView';
 import { CharacterSheetView } from '../viewport/CharacterSheetView';
 import { SettingsView } from '../viewport/SettingsView';
 
@@ -25,7 +25,7 @@ export const MainViewport: React.FC<MainViewportProps> = ({ className }) => {
       case 'map':
         return <WorldMapCanvas />;
       case 'journal':
-        return <NotesView />;
+        return <NpcJournalView />;
       case 'settings':
         return <SettingsView />;
       default:

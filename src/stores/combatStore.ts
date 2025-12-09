@@ -64,6 +64,21 @@ export interface TerrainFeature {
 }
 
 /**
+ * Aura - active area effect centered on a character
+ * Used for Spirit Guardians, Aura of Protection, etc.
+ */
+export interface Aura {
+  id: string;
+  ownerId: string;       // Character who created the aura
+  spellName: string;
+  radius: number;        // Radius in feet (5 = 1 square)
+  affectsAllies: boolean;
+  affectsEnemies: boolean;
+  requiresConcentration: boolean;
+  color?: string;        // Visual color (auto-assigned if not provided)
+}
+
+/**
  * Structure returned by get_encounter_state (now returns JSON!)
  * Updated to include spatial data from MCP server
  */
@@ -125,6 +140,7 @@ interface EncounterStateJson {
 interface CombatState {
   entities: Entity[];
   terrain: TerrainFeature[];
+  auras: Aura[];  // Active area effects
   selectedEntityId: string | null;
   selectedTerrainId: string | null;
   gridConfig: GridConfig;
@@ -164,6 +180,11 @@ interface CombatState {
   updateFromStateJson: (stateJson: EncounterStateJson) => void;
   clearCombat: (keepSession?: boolean) => void;
   setClickedTileCoord: (coord: { x: number; y: number } | null) => void;
+  // Aura management
+  setAuras: (auras: Aura[]) => void;
+  addAura: (aura: Aura) => void;
+  removeAura: (id: string) => void;
+  syncAuras: () => Promise<void>;
 }
 
 const MOCK_ENTITIES: Entity[] = [];
@@ -546,6 +567,7 @@ function generateBattlefieldDescription(data: EncounterStateJson): string {
 export const useCombatStore = create<CombatState>((set, get) => ({
   entities: MOCK_ENTITIES,
   terrain: [],
+  auras: [],  // Active area effects
   selectedEntityId: null,
   selectedTerrainId: null,
   gridConfig: { size: 20, divisions: 20 },
@@ -775,7 +797,44 @@ export const useCombatStore = create<CombatState>((set, get) => ({
   }),
   setMeasureStart: (pos) => set({ measureStart: pos }),
   setMeasureEnd: (pos) => set({ measureEnd: pos }),
-  setCursorPosition: (pos) => set({ cursorPosition: pos })
+  setCursorPosition: (pos) => set({ cursorPosition: pos }),
+
+  // Aura management
+  setAuras: (auras) => set({ auras }),
+  
+  addAura: (aura) => set((state) => ({
+    auras: [...state.auras, aura]
+  })),
+  
+  removeAura: (id) => set((state) => ({
+    auras: state.auras.filter(a => a.id !== id)
+  })),
+  
+  syncAuras: async () => {
+    try {
+      const result = await mcpManager.combatClient.callTool('get_active_auras', {});
+      const data = parseMcpResponse<any>(result, null);
+      
+      if (data?.auras && Array.isArray(data.auras)) {
+        // Map backend aura format to frontend format
+        const auras: Aura[] = data.auras.map((a: any) => ({
+          id: a.id,
+          ownerId: a.ownerId,
+          spellName: a.spellName,
+          radius: a.radius,
+          affectsAllies: a.affectsAllies ?? false,
+          affectsEnemies: a.affectsEnemies ?? false,
+          requiresConcentration: a.requiresConcentration ?? false,
+          // Auto-assign color based on effect type
+          color: a.affectsEnemies ? '#ff4444' : a.affectsAllies ? '#4488ff' : '#ffcc44'
+        }));
+        set({ auras });
+        console.log('[syncAuras] Synced', auras.length, 'auras');
+      }
+    } catch (e: any) {
+      console.warn('[syncAuras] Failed to sync auras:', e.message);
+    }
+  }
 }));
 
 // Export debounced sync for use in components

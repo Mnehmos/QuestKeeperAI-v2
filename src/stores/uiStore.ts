@@ -72,4 +72,8 @@ export const useUIStore = create<UIState>((set) => ({
   openSessionManager: () => set({ showSessionManager: true }),
   closeSessionManager: () => set({ showSessionManager: false }),
   
-  
+  // Quick Command Dispatch
+  pendingCommand: null,
+  setPendingCommand: (command) => set({ pendingCommand: command }),
+  clearPendingCommand: () => set({ pendingCommand: null }),
+}));

@@ -1,6 +1,7 @@
 import React from 'react';
 import { TurnOrderBar } from './TurnOrderBar';
 import { PartyStatusBar } from './PartyStatusBar';
+import { AuraListPanel } from './AuraListPanel';
 import { InventoryDrawer } from './InventoryDrawer';
 import { CharacterQuickView } from './CharacterQuickView';
 import { QuickActionBar } from './QuickActionBar';
@@ -17,9 +18,10 @@ export const CombatHUD: React.FC = () => {
       {/* Top: Turn Order (Only visible during combat) */}
       {activeEncounterId && <TurnOrderBar />}
 
-      {/* Left: Party Status */}
+      {/* Left: Party Status + Auras */}
       <div className="absolute left-0 top-20 bottom-20 w-64 pointer-events-auto">
         <PartyStatusBar />
+        {activeEncounterId && <AuraListPanel />}
       </div>
 
       {/* Right: Drawers and Quick View */}

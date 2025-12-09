@@ -5,6 +5,7 @@ import { GridSystem } from './GridSystem';
 import { CameraControls } from './CameraControls';
 import { EntityLayer } from './EntityLayer';
 import { TerrainLayer } from './Terrain';
+import { AuraLayer } from './AuraLayer';
 import { LineOfSight } from './LineOfSight';
 import { VisualizationControls } from './VisualizationControls';
 import { CombatHUD } from '../hud/CombatHUD';
@@ -77,6 +78,7 @@ export const BattlemapCanvas: React.FC = () => {
         {/* Scene Components */}
         <GridSystem />
         <TerrainLayer />
+        <AuraLayer />  {/* Render auras before entities */}
         <EntityLayer />
         <LineOfSight />
         <CameraControls />
